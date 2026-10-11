@@ -4,9 +4,13 @@
  * transparent heuristics, optional advisory LLM analysis, and deterministic policy rules.
  */
 
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { evaluateSecurityPolicy, createFailClosedVerdict } from '../src/security/policyEngine';
 import { ledgerStore } from '../src/security/transactionGate';
 import { AnalyzeRequestPayload, RiskLevel, ThreatCategory } from '../src/types/firewall';
+
+export type ApiRequest = IncomingMessage & { body?: any };
+export type ApiResponse = ServerResponse;
 
 // Max allowed payload size in bytes (4KB)
 const MAX_PAYLOAD_BYTES = 4096;
@@ -66,7 +70,7 @@ Output ONLY a JSON object with this exact shape:
   }
 }
 
-export default async function handler(req: any, res: any) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   // CORS & Methods
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');

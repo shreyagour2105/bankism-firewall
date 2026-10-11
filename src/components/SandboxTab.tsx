@@ -115,6 +115,7 @@ export const SandboxTab: React.FC<SandboxTabProps> = ({
 
         <button
           onClick={onResetLedger}
+          aria-label="Reset Demo Sandbox"
           className="self-start sm:self-auto px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-xs flex items-center gap-1.5 transition-colors"
         >
           <RotateCcw className="w-3.5 h-3.5" />
@@ -145,15 +146,15 @@ export const SandboxTab: React.FC<SandboxTabProps> = ({
 
             <div className="grid grid-cols-3 gap-2 mt-6 pt-4 border-t border-slate-800/80 text-xs font-mono">
               <div>
-                <span className="text-slate-500 block text-[10px]">DAILY LIMIT</span>
+                <span className="text-slate-400 block text-[10px]">DAILY LIMIT</span>
                 <span className="text-slate-300">$5,000.00</span>
               </div>
               <div>
-                <span className="text-slate-500 block text-[10px]">MAX SINGLE TX</span>
+                <span className="text-slate-400 block text-[10px]">MAX SINGLE TX</span>
                 <span className="text-slate-300">$1,000.00</span>
               </div>
               <div>
-                <span className="text-slate-500 block text-[10px]">AUTH GATE</span>
+                <span className="text-slate-400 block text-[10px]">AUTH GATE</span>
                 <span className="text-emerald-400">ENFORCED</span>
               </div>
             </div>
@@ -197,6 +198,8 @@ export const SandboxTab: React.FC<SandboxTabProps> = ({
       {/* Security Demonstration Feedback */}
       {demoMessage && (
         <div
+          role="status"
+          aria-live="polite"
           className={`p-4 rounded-xl border text-xs font-mono leading-relaxed ${
             demoMessage.isError
               ? 'bg-rose-950/30 border-rose-500/40 text-rose-200'
@@ -235,7 +238,7 @@ export const SandboxTab: React.FC<SandboxTabProps> = ({
               <div className="text-[11px] text-slate-400 truncate">{recip.name}</div>
               <div className="mt-2 flex items-center justify-between text-[10px] font-mono">
                 <span className="text-cyan-400">{recip.category}</span>
-                <span className="text-slate-500">Max ${recip.max_limit}</span>
+                <span className="text-slate-400">Max ${recip.max_limit}</span>
               </div>
             </div>
           ))}
@@ -256,13 +259,13 @@ export const SandboxTab: React.FC<SandboxTabProps> = ({
           <table className="w-full text-left text-xs font-mono">
             <thead>
               <tr className="border-b border-slate-800 text-slate-400 uppercase text-[11px]">
-                <th className="pb-2.5">Time</th>
-                <th className="pb-2.5">Type</th>
-                <th className="pb-2.5">Sender</th>
-                <th className="pb-2.5">Recipient</th>
-                <th className="pb-2.5">Amount</th>
-                <th className="pb-2.5">Status</th>
-                <th className="pb-2.5">Idempotency Key</th>
+                <th scope="col" className="pb-2.5">Time</th>
+                <th scope="col" className="pb-2.5">Type</th>
+                <th scope="col" className="pb-2.5">Sender</th>
+                <th scope="col" className="pb-2.5">Recipient</th>
+                <th scope="col" className="pb-2.5">Amount</th>
+                <th scope="col" className="pb-2.5">Status</th>
+                <th scope="col" className="pb-2.5">Idempotency Key</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-slate-300">
@@ -290,7 +293,7 @@ export const SandboxTab: React.FC<SandboxTabProps> = ({
                       {tx.status}
                     </span>
                   </td>
-                  <td className="py-2.5 text-slate-500 truncate max-w-[140px]">{tx.idempotency_key}</td>
+                  <td className="py-2.5 text-slate-400 truncate max-w-[140px]">{tx.idempotency_key}</td>
                 </tr>
               ))}
             </tbody>

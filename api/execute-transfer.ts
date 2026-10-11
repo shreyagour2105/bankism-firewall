@@ -4,12 +4,16 @@
  * Validates cryptographic HMAC token, enforces atomic idempotency, and prevents replay attacks.
  */
 
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { ledgerStore } from '../src/security/transactionGate';
 import { ExecuteTransferPayload } from '../src/types/firewall';
 
+export type ApiRequest = IncomingMessage & { body?: any };
+export type ApiResponse = ServerResponse;
+
 const MAX_PAYLOAD_BYTES = 4096;
 
-export default async function handler(req: any, res: any) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');

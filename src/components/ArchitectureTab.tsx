@@ -200,10 +200,10 @@ export const ArchitectureTab: React.FC = () => {
           <table className="w-full text-left text-xs font-mono">
             <thead>
               <tr className="border-b border-slate-800 text-slate-400 uppercase text-[11px]">
-                <th className="pb-2.5">Threat Category</th>
-                <th className="pb-2.5">Attack Signature / Example</th>
-                <th className="pb-2.5">Impact</th>
-                <th className="pb-2.5">Defensive Control</th>
+                <th scope="col" className="pb-2.5">Threat Category</th>
+                <th scope="col" className="pb-2.5">Attack Signature / Example</th>
+                <th scope="col" className="pb-2.5">Impact</th>
+                <th scope="col" className="pb-2.5">Defensive Control</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-slate-300">

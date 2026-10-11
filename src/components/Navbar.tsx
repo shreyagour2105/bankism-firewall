@@ -33,7 +33,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="relative flex items-center justify-center w-10 h-10 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.25)]">
               <Shield className="w-6 h-6" />
               <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                <span className="motion-safe:animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-500"></span>
               </span>
             </div>
@@ -75,12 +75,17 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Navigation Tabs */}
-        <nav className="flex space-x-1 sm:space-x-2 border-t border-slate-800/60 overflow-x-auto py-2">
+        <nav role="tablist" aria-label="Security Operations Navigation" className="flex space-x-1 sm:space-x-2 border-t border-slate-800/60 overflow-x-auto py-2">
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
+                id={`tab-${tab.id}`}
+                role="tab"
+                aria-selected={isActive}
+                aria-controls={`tabpanel-${tab.id}`}
+                tabIndex={isActive ? 0 : -1}
                 onClick={() => setActiveTab(tab.id)}
                 className={`px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md whitespace-nowrap transition-all duration-150 ${
                   isActive

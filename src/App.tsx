@@ -286,57 +286,63 @@ export const App: React.FC = () => {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {activeTab === 'overview' && (
-          <OverviewTab
-            verdicts={verdicts}
-            transactions={transactions}
-            balance={balance}
-            onSelectVerdict={(v) => {
-              setCurrentVerdict(v);
-              setActiveTab('console');
-            }}
-            onNavigateToConsole={() => setActiveTab('console')}
-          />
-        )}
+        <div
+          role="tabpanel"
+          id={`tabpanel-${activeTab}`}
+          aria-labelledby={`tab-${activeTab}`}
+        >
+          {activeTab === 'overview' && (
+            <OverviewTab
+              verdicts={verdicts}
+              transactions={transactions}
+              balance={balance}
+              onSelectVerdict={(v) => {
+                setCurrentVerdict(v);
+                setActiveTab('console');
+              }}
+              onNavigateToConsole={() => setActiveTab('console')}
+            />
+          )}
 
-        {activeTab === 'console' && (
-          <ConsoleTab
-            onAnalyze={handleAnalyze}
-            onExecuteTransfer={handleExecuteTransfer}
-            verdict={currentVerdict}
-            verdictToken={verdictToken}
-            isAnalyzing={isAnalyzing}
-            isExecuting={isExecuting}
-            executionResult={executionResult}
-          />
-        )}
+          {activeTab === 'console' && (
+            <ConsoleTab
+              onAnalyze={handleAnalyze}
+              onExecuteTransfer={handleExecuteTransfer}
+              verdict={currentVerdict}
+              verdictToken={verdictToken}
+              isAnalyzing={isAnalyzing}
+              isExecuting={isExecuting}
+              executionResult={executionResult}
+            />
+          )}
 
-        {activeTab === 'lab' && (
-          <LabTab
-            onAnalyze={handleAnalyze}
-            onSelectVerdict={(v) => {
-              setCurrentVerdict(v);
-              setActiveTab('console');
-            }}
-            onNavigateToConsole={(payload) => {
-              handleAnalyze(payload);
-              setActiveTab('console');
-            }}
-          />
-        )}
+          {activeTab === 'lab' && (
+            <LabTab
+              onAnalyze={handleAnalyze}
+              onSelectVerdict={(v) => {
+                setCurrentVerdict(v);
+                setActiveTab('console');
+              }}
+              onNavigateToConsole={(payload) => {
+                handleAnalyze(payload);
+                setActiveTab('console');
+              }}
+            />
+          )}
 
-        {activeTab === 'sandbox' && (
-          <SandboxTab
-            balance={balance}
-            transactions={transactions}
-            onResetLedger={handleResetLedger}
-            onExecuteRawTransfer={handleExecuteRawTransfer}
-          />
-        )}
+          {activeTab === 'sandbox' && (
+            <SandboxTab
+              balance={balance}
+              transactions={transactions}
+              onResetLedger={handleResetLedger}
+              onExecuteRawTransfer={handleExecuteRawTransfer}
+            />
+          )}
 
-        {activeTab === 'architecture' && <ArchitectureTab />}
+          {activeTab === 'architecture' && <ArchitectureTab />}
 
-        {activeTab === 'docs' && <DocsTab />}
+          {activeTab === 'docs' && <DocsTab />}
+        </div>
       </main>
 
       {/* SOC Footer */}

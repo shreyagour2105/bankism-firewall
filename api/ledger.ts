@@ -5,11 +5,15 @@
  */
 
 import crypto from 'node:crypto';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { ledgerStore } from '../src/security/transactionGate';
+
+export type ApiRequest = IncomingMessage & { body?: any };
+export type ApiResponse = ServerResponse;
 
 const MAX_PAYLOAD_BYTES = 1024;
 
-export default async function handler(req: any, res: any) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-admin-token');

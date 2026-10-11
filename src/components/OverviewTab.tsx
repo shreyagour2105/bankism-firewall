@@ -47,7 +47,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-xl bg-gradient-to-r from-[#0f172a] via-[#131e36] to-[#0f172a] border border-cyan-500/20 shadow-lg">
         <div>
           <div className="flex items-center gap-2">
-            <span className="inline-block w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse"></span>
+            <span className="inline-block w-2.5 h-2.5 rounded-full bg-cyan-400 motion-safe:animate-pulse"></span>
             <span className="text-xs font-mono font-semibold tracking-wider uppercase text-cyan-300">
               SECURITY OPERATIONS CENTER ACTIVE
             </span>
@@ -127,22 +127,30 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           </div>
 
           {Object.keys(threatCounts).length === 0 ? (
-            <div className="py-8 text-center text-slate-500 text-xs font-mono">
+            <div className="py-8 text-center text-slate-400 text-xs font-mono">
               No active adversarial attack threats recorded yet. Run test cases in Attack Lab.
             </div>
           ) : (
             <div className="space-y-3">
               {Object.entries(threatCounts).map(([cat, count]) => {
                 const percentage = ((count / Math.max(1, blocked + review)) * 100).toFixed(0);
+                const formattedCat = cat.replace(/_/g, ' ');
                 return (
                   <div key={cat} className="space-y-1">
                     <div className="flex justify-between text-xs">
-                      <span className="font-mono text-slate-300">{cat}</span>
+                      <span className="font-mono text-slate-300">{formattedCat}</span>
                       <span className="font-mono text-slate-400">
                         {count} ({percentage}%)
                       </span>
                     </div>
-                    <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+                    <div
+                      role="progressbar"
+                      aria-valuenow={Number(percentage)}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-label={`${formattedCat} threat frequency: ${percentage}%`}
+                      className="w-full h-2 rounded-full bg-slate-800 overflow-hidden"
+                    >
                       <div
                         className="h-full bg-rose-500 rounded-full"
                         style={{ width: `${Math.min(100, Math.max(8, Number(percentage)))}%` }}
@@ -192,7 +200,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             </div>
           </div>
 
-          <div className="pt-4 border-t border-slate-800 mt-4 text-[11px] text-slate-500">
+          <div className="pt-4 border-t border-slate-800 mt-4 text-[11px] text-slate-400">
             * Pure simulation sandbox. Zero connections to production banking networks or real currency.
           </div>
         </div>
@@ -209,7 +217,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         </div>
 
         {verdicts.length === 0 ? (
-          <div className="py-6 text-center text-slate-500 text-xs font-mono">
+          <div className="py-6 text-center text-slate-400 text-xs font-mono">
             No firewall requests recorded yet.
           </div>
         ) : (
@@ -243,7 +251,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 
                 <div className="text-right text-[11px] font-mono text-slate-400 shrink-0">
                   <div>Risk: {v.risk_level}</div>
-                  <div className="text-slate-500">{new Date(v.timestamp).toLocaleTimeString()}</div>
+                  <div className="text-slate-400">{new Date(v.timestamp).toLocaleTimeString()}</div>
                 </div>
               </div>
             ))}

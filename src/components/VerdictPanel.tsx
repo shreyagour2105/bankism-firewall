@@ -36,10 +36,10 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
 
   if (!verdict) {
     return (
-      <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-8 text-center text-slate-500">
-        <ShieldCheck className="w-12 h-12 mx-auto mb-3 opacity-30 text-cyan-400" />
-        <h4 className="text-sm font-semibold text-slate-400 mb-1">Awaiting Security Evaluation</h4>
-        <p className="text-xs max-w-sm mx-auto text-slate-500">
+      <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-8 text-center text-slate-400">
+        <ShieldCheck className="w-12 h-12 mx-auto mb-3 opacity-40 text-cyan-400" />
+        <h4 className="text-sm font-semibold text-slate-300 mb-1">Awaiting Security Evaluation</h4>
+        <p className="text-xs max-w-sm mx-auto text-slate-400">
           Submit a natural language banking request or select an attack simulation test case above to trigger the firewall pipeline.
         </p>
       </div>
@@ -79,13 +79,17 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
     LOW: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
     MEDIUM: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
     HIGH: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
-    CRITICAL: 'bg-rose-500/20 text-rose-400 border-rose-500/50 animate-pulse',
+    CRITICAL: 'bg-rose-500/20 text-rose-400 border-rose-500/50 motion-safe:animate-pulse',
   }[verdict.risk_level];
 
   return (
     <div className="bg-[#0f172a] border border-slate-800 rounded-xl overflow-hidden shadow-xl">
       {/* Top Banner Verdict Header */}
-      <div className={`p-4 sm:p-5 border-b ${verdictStyles.bg} flex flex-wrap items-center justify-between gap-3`}>
+      <div
+        role="status"
+        aria-live="polite"
+        className={`p-4 sm:p-5 border-b ${verdictStyles.bg} flex flex-wrap items-center justify-between gap-3`}
+      >
         <div className="flex items-center gap-3">
           {verdictStyles.icon}
           <div>
@@ -114,7 +118,7 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
       <div className="p-4 sm:p-6 space-y-6">
         {/* Rationale Section */}
         <div>
-          <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+          <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
             <ShieldAlert className="w-3.5 h-3.5 text-cyan-400" />
             Decision Rationale
           </h4>
@@ -125,20 +129,25 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
 
         {/* Threat Categories Detected */}
         <div>
-          <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+          <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
             Threat Categories Flagged
           </h4>
           <div className="flex flex-wrap gap-2">
             {verdict.threat_category.map((cat, idx) => (
               <span
-                key={idx}
-                className={`text-xs px-2.5 py-1 rounded-md font-mono border ${
+                key={`${cat}-${idx}`}
+                className={`text-xs px-2.5 py-1 rounded-md font-mono border inline-flex items-center gap-1.5 ${
                   cat === 'NONE'
-                    ? 'bg-slate-800/60 text-slate-400 border-slate-700'
-                    : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                    ? 'bg-slate-800/60 text-slate-300 border-slate-700'
+                    : 'bg-rose-500/15 text-rose-200 border-rose-500/30 font-semibold'
                 }`}
               >
-                {cat}
+                {cat === 'NONE' ? (
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
+                ) : (
+                  <ShieldAlert className="w-3.5 h-3.5 text-rose-400 shrink-0" aria-hidden="true" />
+                )}
+                <span>{cat.replace(/_/g, ' ')}</span>
               </span>
             ))}
           </div>
@@ -237,6 +246,8 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
             {/* Execution Result Banner */}
             {executionResult && (
               <div
+                role="status"
+                aria-live="polite"
                 className={`mt-3 p-2.5 rounded text-xs border ${
                   executionResult.success
                     ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
@@ -258,6 +269,8 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
         <div className="border border-slate-800 rounded-lg overflow-hidden">
           <button
             onClick={() => setIsJsonOpen(!isJsonOpen)}
+            aria-expanded={isJsonOpen}
+            aria-controls="verdict-json-viewer"
             className="w-full px-4 py-2.5 bg-slate-900/60 hover:bg-slate-900 flex items-center justify-between text-xs font-mono text-slate-300 transition-colors"
           >
             <div className="flex items-center gap-2">
@@ -268,7 +281,7 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
           </button>
 
           {isJsonOpen && (
-            <div className="p-3 bg-slate-950 border-t border-slate-800 relative">
+            <div id="verdict-json-viewer" className="p-3 bg-slate-950 border-t border-slate-800 relative">
               <button
                 onClick={handleCopyJson}
                 className="absolute top-4 right-4 p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs flex items-center gap-1 font-mono"

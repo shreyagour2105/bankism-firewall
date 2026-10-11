@@ -389,6 +389,187 @@ describe('HTTP Handler Integration — /api/execute-transfer', () => {
     expect(execResReplay.json()?.error).toContain('REPLAY_REJECTED');
     expect(ledgerStore.getBalance()).toBe(4750);
   });
+
+  it('/api/execute-transfer rejects expired authorization tokens with 400 GATE_REJECTION', async () => {
+    const expiredPayload = {
+      rid: `req_exp_${Date.now()}`,
+      rec: 'alice.eth',
+      amt: 100,
+      memo: 'lunch',
+      v: 'APPROVED',
+      intent: 'TRANSFER',
+      iat: Date.now() - 600000,
+      exp: Date.now() - 1000, // expired 1s ago
+    };
+    const b64 = Buffer.from(JSON.stringify(expiredPayload)).toString('base64url');
+    const sig = crypto.createHmac('sha256', getSigningKey()).update(b64).digest('hex');
+    const expiredToken = `bk_auth.${b64}.${sig}`;
+
+    const res = await invokeHandler(executeTransferHandler, {
+      method: 'POST',
+      body: {
+        request_id: expiredPayload.rid,
+        recipient: 'alice.eth',
+        amount: 100,
+        memo: 'lunch',
+        idempotency_key: `idem_exp_${Date.now()}`,
+        verdict_token: expiredToken,
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()?.error).toContain('GATE_REJECTION: Authorization token expired');
+  });
+
+  it('/api/execute-transfer rejects tampered token signatures with 400 GATE_REJECTION', async () => {
+    const payload = {
+      rid: `req_tamper_${Date.now()}`,
+      rec: 'alice.eth',
+      amt: 100,
+      memo: 'lunch',
+      v: 'APPROVED',
+      intent: 'TRANSFER',
+      iat: Date.now(),
+      exp: Date.now() + 60000,
+    };
+    const b64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+    const sig = crypto.createHmac('sha256', getSigningKey()).update(b64).digest('hex');
+    // Flip a character in signature
+    const corruptedSig = sig.slice(0, -1) + (sig.slice(-1) === 'a' ? 'b' : 'a');
+    const tamperedToken = `bk_auth.${b64}.${corruptedSig}`;
+
+    const res = await invokeHandler(executeTransferHandler, {
+      method: 'POST',
+      body: {
+        request_id: payload.rid,
+        recipient: 'alice.eth',
+        amount: 100,
+        memo: 'lunch',
+        idempotency_key: `idem_tamper_${Date.now()}`,
+        verdict_token: tamperedToken,
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()?.error).toContain('Invalid token signature. Forged or tampered authorization token detected.');
+  });
+
+  it('/api/execute-transfer rejects tokens containing unapproved status', async () => {
+    const unapprovedPayload = {
+      rid: `req_unappr_${Date.now()}`,
+      rec: 'alice.eth',
+      amt: 100,
+      memo: 'lunch',
+      v: 'BLOCKED',
+      intent: 'TRANSFER',
+      iat: Date.now(),
+      exp: Date.now() + 60000,
+    };
+    const b64 = Buffer.from(JSON.stringify(unapprovedPayload)).toString('base64url');
+    const sig = crypto.createHmac('sha256', getSigningKey()).update(b64).digest('hex');
+    const unapprovedToken = `bk_auth.${b64}.${sig}`;
+
+    const res = await invokeHandler(executeTransferHandler, {
+      method: 'POST',
+      body: {
+        request_id: unapprovedPayload.rid,
+        recipient: 'alice.eth',
+        amount: 100,
+        memo: 'lunch',
+        idempotency_key: `idem_unappr_${Date.now()}`,
+        verdict_token: unapprovedToken,
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()?.error).toContain('Token does not contain an approved transfer authorization.');
+  });
+
+  it('Enforces balance invariants and fail-closed rejections under concurrent transfer load', async () => {
+    ledgerStore.resetLedger();
+
+    // Generate 6 distinct approved tokens for $1,000 each (starting balance $5,000)
+    const requests = await Promise.all(
+      Array.from({ length: 6 }).map(async (_, idx) => {
+        const analyzeRes = await invokeHandler(analyzeHandler, {
+          method: 'POST',
+          body: {
+            raw_input: `Transfer $1000 to alice.eth payment ${idx}`,
+            recipient: 'alice.eth',
+            amount: 1000,
+            memo: `payment ${idx}`,
+          },
+        });
+        const { verdict, verdict_token } = analyzeRes.json();
+        return {
+          request_id: verdict.request_id,
+          recipient: 'alice.eth',
+          amount: 1000,
+          memo: `payment ${idx}`,
+          idempotency_key: `idem_concurrent_race_${idx}_${Date.now()}`,
+          verdict_token,
+        };
+      })
+    );
+
+    // Dispatch all 6 execution requests concurrently
+    const executionResults = await Promise.all(
+      requests.map((reqPayload) =>
+        invokeHandler(executeTransferHandler, {
+          method: 'POST',
+          body: reqPayload,
+        })
+      )
+    );
+
+    const succeeded = executionResults.filter((r) => r.statusCode === 200 && r.json()?.success === true);
+    const failed = executionResults.filter((r) => r.statusCode === 400 && r.json()?.success === false);
+
+    expect(succeeded.length).toBe(5);
+    expect(failed.length).toBe(1);
+    expect(failed[0].json()?.error).toContain('Insufficient demo funds');
+    expect(ledgerStore.getBalance()).toBe(0);
+  });
+
+  it('Enforces single execution when identical idempotency keys race concurrently', async () => {
+    ledgerStore.resetLedger();
+
+    const analyzeRes = await invokeHandler(analyzeHandler, {
+      method: 'POST',
+      body: {
+        raw_input: 'Transfer $500 to bob_miller for consulting',
+        recipient: 'bob_miller',
+        amount: 500,
+        memo: 'consulting',
+      },
+    });
+    const { verdict, verdict_token } = analyzeRes.json();
+    const sharedIdemKey = `idem_race_duplicate_${Date.now()}`;
+
+    // Dispatch 4 simultaneous calls with identical idempotency key
+    const raceResults = await Promise.all(
+      Array.from({ length: 4 }).map(() =>
+        invokeHandler(executeTransferHandler, {
+          method: 'POST',
+          body: {
+            request_id: verdict.request_id,
+            recipient: 'bob_miller',
+            amount: 500,
+            memo: 'consulting',
+            idempotency_key: sharedIdemKey,
+            verdict_token,
+          },
+        })
+      )
+    );
+
+    const succeeded = raceResults.filter((r) => r.statusCode === 200 && r.json()?.success === true);
+    const duplicates = raceResults.filter((r) => r.statusCode === 400 && r.json()?.error?.includes('DUPLICATE_REJECTED'));
+
+    expect(succeeded.length).toBe(1);
+    expect(duplicates.length).toBe(3);
+    expect(ledgerStore.getBalance()).toBe(4500);
+  });
 });
 
 // ─── SUITE 3: /api/ledger Handler & ADMIN_RESET_TOKEN Tests ─────────────────

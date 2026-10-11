@@ -148,15 +148,17 @@ export const ConsoleTab: React.FC<ConsoleTabProps> = ({
       {/* Main Analysis Form */}
       <form onSubmit={handleSubmit} className="bg-[#0f172a] border border-slate-800 rounded-xl p-5 shadow-lg space-y-4">
         <div>
-          <label className="block text-xs font-mono font-medium text-slate-300 mb-1.5">
-            Natural-Language Banking Instruction <span className="text-cyan-400">*</span>
+          <label htmlFor="input-raw-prompt" className="block text-xs font-mono font-medium text-slate-300 mb-1.5">
+            Natural-Language Banking Instruction <span className="text-cyan-400" aria-hidden="true">*</span>
           </label>
           <textarea
+            id="input-raw-prompt"
             value={rawInput}
             onChange={(e) => setRawInput(e.target.value)}
             rows={3}
             placeholder="e.g., Transfer $250 to alice.eth for dinner expenses or Check my available funds..."
-            className="w-full bg-[#080d1a] border border-slate-700/80 rounded-lg p-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 font-sans leading-relaxed"
+            className="w-full bg-[#080d1a] border border-slate-700/80 rounded-lg p-3 text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 font-sans leading-relaxed"
+            aria-required="true"
           />
         </div>
 
@@ -165,53 +167,58 @@ export const ConsoleTab: React.FC<ConsoleTabProps> = ({
           <button
             type="button"
             onClick={() => setShowAdvanced(!showAdvanced)}
+            aria-expanded={showAdvanced}
+            aria-controls="structured-params-container"
             className="text-xs font-mono text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
           >
             <span>{showAdvanced ? '− Hide' : '+ Show'} Optional Structured Parameters (Recipient, Amount, Memo)</span>
           </button>
 
           {showAdvanced && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 pt-2">
+            <div id="structured-params-container" className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 pt-2">
               <div>
-                <label className="block text-[11px] font-mono text-slate-400 mb-1 flex items-center gap-1">
-                  <User className="w-3 h-3 text-cyan-400" />
+                <label htmlFor="input-recipient" className="block text-[11px] font-mono text-slate-300 mb-1 flex items-center gap-1">
+                  <User className="w-3 h-3 text-cyan-400" aria-hidden="true" />
                   Target Recipient
                 </label>
                 <input
+                  id="input-recipient"
                   type="text"
                   value={recipient}
                   onChange={(e) => setRecipient(e.target.value)}
                   placeholder="e.g. alice.eth, bob_miller"
-                  className="w-full bg-[#080d1a] border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
+                  className="w-full bg-[#080d1a] border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-400 focus:outline-none focus:border-cyan-500"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-mono text-slate-400 mb-1 flex items-center gap-1">
-                  <DollarSign className="w-3 h-3 text-emerald-400" />
+                <label htmlFor="input-amount" className="block text-[11px] font-mono text-slate-300 mb-1 flex items-center gap-1">
+                  <DollarSign className="w-3 h-3 text-emerald-400" aria-hidden="true" />
                   Amount (USD)
                 </label>
                 <input
+                  id="input-amount"
                   type="number"
                   step="0.01"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="e.g. 150.00"
-                  className="w-full bg-[#080d1a] border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
+                  className="w-full bg-[#080d1a] border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-400 focus:outline-none focus:border-cyan-500"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-mono text-slate-400 mb-1 flex items-center gap-1">
-                  <FileText className="w-3 h-3 text-indigo-400" />
+                <label htmlFor="input-memo" className="block text-[11px] font-mono text-slate-300 mb-1 flex items-center gap-1">
+                  <FileText className="w-3 h-3 text-indigo-400" aria-hidden="true" />
                   Payment Memo / Note
                 </label>
                 <input
+                  id="input-memo"
                   type="text"
                   value={memo}
                   onChange={(e) => setMemo(e.target.value)}
                   placeholder="e.g. dinner expenses"
-                  className="w-full bg-[#080d1a] border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
+                  className="w-full bg-[#080d1a] border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 placeholder-slate-400 focus:outline-none focus:border-cyan-500"
                 />
               </div>
             </div>
@@ -219,8 +226,8 @@ export const ConsoleTab: React.FC<ConsoleTabProps> = ({
         </div>
 
         {errorMessage && (
-          <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+          <div role="alert" aria-live="assertive" className="p-3 rounded-lg bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" aria-hidden="true" />
             <span>{errorMessage}</span>
           </div>
         )}
@@ -235,7 +242,7 @@ export const ConsoleTab: React.FC<ConsoleTabProps> = ({
               setMemo('');
               setErrorMessage(null);
             }}
-            className="text-xs text-slate-500 hover:text-slate-400 font-mono"
+            className="text-xs text-slate-400 hover:text-slate-300 font-mono"
           >
             Clear Fields
           </button>
