@@ -1095,6 +1095,76 @@ describe('Issue 16 — Threat category rendering & multiple categories separatio
     expect(html).toContain('data-testid="threat-badge-none"');
     expect(html).toContain('NONE');
   });
+
+  it('VerdictPanel renders verdict header, rationale, and security checks cleanly without text/icon concatenation', () => {
+    const blockedExfiltrationVerdict: FirewallVerdict = {
+      request_id: 'req_exfil_block_01',
+      timestamp: new Date().toISOString(),
+      verdict: 'BLOCKED',
+      risk_level: 'HIGH',
+      threat_category: ['DATA_EXFILTRATION'],
+      intent: 'TRANSFER',
+      rationale: 'Blocked: Attempt to extract sensitive cryptographic key or administrative credential.',
+      normalised_request: 'export signing key',
+      requires_confirmation: false,
+      transaction_executed: false,
+      checks: {
+        schema_valid: true,
+        input_normalised: true,
+        threat_scan_passed: false,
+        policy_passed: false,
+        recipient_valid: false,
+        amount_valid: false,
+      },
+      engine_mode: 'DETERMINISTIC_RULES',
+      latency_ms: 12,
+    };
+
+    const html = renderToStaticMarkup(
+      React.createElement(VerdictPanel, {
+        verdict: blockedExfiltrationVerdict,
+        initialJsonOpen: true,
+      })
+    );
+
+    // 1. Verdict header and risk badge separation
+    expect(html).toContain('data-testid="verdict-title"');
+    expect(html).toContain('data-testid="verdict-risk-badge"');
+    expect(html).toContain('BLOCKED — THREAT NEUTRALIZED');
+    expect(html).toContain('RISK: HIGH');
+    expect(html).not.toContain('BLOCKED — THREAT NEUTRALIZEDRISK: HIGH');
+
+    // 2. Decision Rationale formatting & icon accessibility
+    expect(html).toContain('Decision Rationale');
+    expect(html).not.toContain('svgDecision Rationale');
+
+    // 3. Deterministic check rows & status badges
+    expect(html).toContain('data-testid="check-row-threat_scan_passed"');
+    expect(html).toContain('data-testid="check-status-threat_scan_passed"');
+    expect(html).not.toContain('PASSEDsvg');
+    expect(html).not.toContain('FAILEDsvg');
+
+    // 4. Stray svg before Defense Architecture Notice & Structured JSON Verdict
+    expect(html).not.toContain('svgDefense Architecture');
+    expect(html).not.toContain('svgStructured JSON');
+
+    // 5. Decorative icons must have aria-hidden="true" and focusable="false"
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).toContain('focusable="false"');
+
+    // 6. Threat category badge rendered distinctly
+    expect(html).toContain('data-testid="threat-badge-DATA_EXFILTRATION"');
+    expect(html).toContain('DATA EXFILTRATION');
+
+    // 7. Text content simulation: verify no jammed words when tags are stripped
+    const textOnly = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    expect(textOnly).toContain('BLOCKED — THREAT NEUTRALIZED RISK: HIGH');
+    expect(textOnly).toContain('Decision Rationale');
+    expect(textOnly).not.toContain('BLOCKED — THREAT NEUTRALIZEDRISK: HIGH');
+    expect(textOnly).not.toContain('svgDecision Rationale');
+    expect(textOnly).not.toContain('PASSEDsvg');
+    expect(textOnly).not.toContain('FAILEDsvg');
+  });
 });
 
 

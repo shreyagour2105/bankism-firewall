@@ -39,7 +39,7 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
   if (!verdict) {
     return (
       <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-8 text-center text-slate-400">
-        <ShieldCheck className="w-12 h-12 mx-auto mb-3 opacity-40 text-cyan-400" />
+        <ShieldCheck className="w-12 h-12 mx-auto mb-3 opacity-40 text-cyan-400" aria-hidden="true" focusable="false" />
         <h4 className="text-sm font-semibold text-slate-300 mb-1">Awaiting Security Evaluation</h4>
         <p className="text-xs max-w-sm mx-auto text-slate-400">
           Submit a natural language banking request or select an attack simulation test case above to trigger the firewall pipeline.
@@ -59,19 +59,19 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
     APPROVED: {
       bg: 'bg-emerald-950/40 border-emerald-500/40 text-emerald-400',
       badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50',
-      icon: <CheckCircle className="w-6 h-6 text-emerald-400" />,
+      icon: <CheckCircle className="w-6 h-6 text-emerald-400 shrink-0" aria-hidden="true" focusable="false" />,
       title: 'APPROVED — REQUEST CLEARED',
     },
     BLOCKED: {
       bg: 'bg-rose-950/40 border-rose-500/40 text-rose-400',
       badge: 'bg-rose-500/20 text-rose-300 border-rose-500/50',
-      icon: <XCircle className="w-6 h-6 text-rose-400" />,
+      icon: <XCircle className="w-6 h-6 text-rose-400 shrink-0" aria-hidden="true" focusable="false" />,
       title: 'BLOCKED — THREAT NEUTRALIZED',
     },
     REVIEW_REQUIRED: {
       bg: 'bg-amber-950/40 border-amber-500/40 text-amber-400',
       badge: 'bg-amber-500/20 text-amber-300 border-amber-500/50',
-      icon: <AlertTriangle className="w-6 h-6 text-amber-400" />,
+      icon: <AlertTriangle className="w-6 h-6 text-amber-400 shrink-0" aria-hidden="true" focusable="false" />,
       title: 'REVIEW REQUIRED — POLICY BOUNDARY',
     },
   }[verdict.verdict];
@@ -95,11 +95,18 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
         <div className="flex items-center gap-3">
           {verdictStyles.icon}
           <div>
-            <div className="flex items-center gap-2">
-              <span className="font-mono font-bold text-base sm:text-lg tracking-wide">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                data-testid="verdict-title"
+                className="font-mono font-bold text-base sm:text-lg tracking-wide"
+              >
                 {verdictStyles.title}
               </span>
-              <span className={`text-[11px] font-mono px-2 py-0.5 rounded border uppercase font-semibold ${riskBadgeStyles}`}>
+              {' '}
+              <span
+                data-testid="verdict-risk-badge"
+                className={`text-[11px] font-mono px-2 py-0.5 rounded border uppercase font-semibold ${riskBadgeStyles}`}
+              >
                 RISK: {verdict.risk_level}
               </span>
             </div>
@@ -121,8 +128,9 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
         {/* Rationale Section */}
         <div>
           <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-            <ShieldAlert className="w-3.5 h-3.5 text-cyan-400" />
-            Decision Rationale
+            <ShieldAlert className="w-3.5 h-3.5 text-cyan-400 shrink-0" aria-hidden="true" focusable="false" />
+            {' '}
+            <span>Decision Rationale</span>
           </h4>
           <div className="p-3.5 rounded-lg bg-slate-900/80 border border-slate-800 text-sm text-slate-200 leading-relaxed font-sans">
             {verdict.rationale}
@@ -140,7 +148,8 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
                 data-testid="threat-badge-none"
                 className="text-xs px-2.5 py-1 rounded-md font-mono border bg-slate-800/60 text-slate-300 border-slate-700 inline-flex items-center gap-1.5"
               >
-                <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
+                <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" focusable="false" />
+                {' '}
                 <span>NONE</span>
               </span>
             </div>
@@ -165,10 +174,11 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
                       }`}
                     >
                       {isNone ? (
-                        <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
+                        <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" focusable="false" />
                       ) : (
-                        <ShieldAlert className="w-3.5 h-3.5 text-rose-400 shrink-0" aria-hidden="true" />
+                        <ShieldAlert className="w-3.5 h-3.5 text-rose-400 shrink-0" aria-hidden="true" focusable="false" />
                       )}
+                      {' '}
                       <span>{label}</span>
                     </span>
                     {' '}
@@ -192,6 +202,7 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
               return (
                 <div
                   key={checkKey}
+                  data-testid={`check-row-${checkKey}`}
                   className={`p-2.5 rounded-lg border flex items-center justify-between ${
                     passed
                       ? 'bg-emerald-950/20 border-emerald-500/20 text-emerald-300'
@@ -201,6 +212,7 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
                   <span className="font-mono text-[11px] truncate">{label}</span>
                   <div className="flex items-center gap-1.5 shrink-0 ml-2">
                     <span
+                      data-testid={`check-status-${checkKey}`}
                       className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded border uppercase ${
                         passed
                           ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
@@ -209,10 +221,11 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
                     >
                       {passed ? 'PASSED' : 'FAILED'}
                     </span>
+                    {' '}
                     {passed ? (
-                      <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                      <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" focusable="false" />
                     ) : (
-                      <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                      <XCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" aria-hidden="true" focusable="false" />
                     )}
                   </div>
                 </div>
@@ -223,9 +236,11 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
 
         {/* Separation of Analysis vs Execution Notice */}
         <div className="p-3 rounded-lg bg-cyan-950/20 border border-cyan-500/20 text-xs text-cyan-200/90 flex items-start gap-2.5">
-          <Zap className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+          <Zap className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" aria-hidden="true" focusable="false" />
+          {' '}
           <div>
-            <strong>Defense Architecture Notice:</strong> Analysis approval verifies policy clearance only.
+            <strong>Defense Architecture Notice:</strong>{' '}
+            Analysis approval verifies policy clearance only.
             Privileged banking actions can NEVER execute client-side and require passing the second server-side authorization gate.
           </div>
         </div>
@@ -236,8 +251,9 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h5 className="text-sm font-semibold text-emerald-400 flex items-center gap-1.5">
-                  <UserCheck className="w-4 h-4" />
-                  Eligible for Mock Transfer Execution
+                  <UserCheck className="w-4 h-4 shrink-0" aria-hidden="true" focusable="false" />
+                  {' '}
+                  <span>Eligible for Mock Transfer Execution</span>
                 </h5>
                 <p className="text-xs text-slate-400 mt-0.5">
                   Amount: <span className="font-mono text-white font-semibold">${verdict.extracted_parameters?.amount}</span> • Recipient:{' '}
@@ -262,7 +278,8 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
                   ) : (
                     <>
                       <span>Submit to Transaction Gate</span>
-                      <ArrowRight className="w-4 h-4" />
+                      {' '}
+                      <ArrowRight className="w-4 h-4 shrink-0" aria-hidden="true" focusable="false" />
                     </>
                   )}
                 </button>
@@ -300,10 +317,15 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
             className="w-full px-4 py-2.5 bg-slate-900/60 hover:bg-slate-900 flex items-center justify-between text-xs font-mono text-slate-300 transition-colors"
           >
             <div className="flex items-center gap-2">
-              <Code className="w-4 h-4 text-cyan-400" />
+              <Code className="w-4 h-4 text-cyan-400 shrink-0" aria-hidden="true" focusable="false" />
+              {' '}
               <span>Structured JSON Verdict (Schema v1.0)</span>
             </div>
-            {isJsonOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            {isJsonOpen ? (
+              <ChevronUp className="w-4 h-4 shrink-0" aria-hidden="true" focusable="false" />
+            ) : (
+              <ChevronDown className="w-4 h-4 shrink-0" aria-hidden="true" focusable="false" />
+            )}
           </button>
 
           {isJsonOpen && (
@@ -312,7 +334,12 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
                 onClick={handleCopyJson}
                 className="absolute top-4 right-4 p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs flex items-center gap-1 font-mono"
               >
-                {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                {copied ? (
+                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" focusable="false" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5 shrink-0" aria-hidden="true" focusable="false" />
+                )}
+                {' '}
                 <span>{copied ? 'Copied' : 'Copy JSON'}</span>
               </button>
               <pre className="text-[11px] font-mono text-slate-300 overflow-x-auto p-2 leading-relaxed">

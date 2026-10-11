@@ -166,7 +166,7 @@ export const LabTab: React.FC<LabTabProps> = ({
             </span>
             {passedCount === completedCount && (
               <span className="text-emerald-400 flex items-center gap-1">
-                <Check className="w-3.5 h-3.5" /> 100% Guardrail Integrity
+                <Check className="w-3.5 h-3.5" aria-hidden="true" focusable="false" />{' '}<span>100% Guardrail Integrity</span>
               </span>
             )}
           </div>
@@ -210,11 +210,11 @@ export const LabTab: React.FC<LabTabProps> = ({
                     <div className="shrink-0">
                       {runResult.passed ? (
                         <span className="flex items-center gap-1 text-xs font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-500/40 px-2 py-1 rounded">
-                          <CheckCircle className="w-3.5 h-3.5" /> PASS
+                          <CheckCircle className="w-3.5 h-3.5" aria-hidden="true" focusable="false" />{' '}<span>PASS</span>
                         </span>
                       ) : (
                         <span className="flex items-center gap-1 text-xs font-mono text-rose-400 bg-rose-950/60 border border-rose-500/40 px-2 py-1 rounded">
-                          <XCircle className="w-3.5 h-3.5" /> FAIL
+                          <XCircle className="w-3.5 h-3.5" aria-hidden="true" focusable="false" />{' '}<span>FAIL</span>
                         </span>
                       )}
                     </div>
