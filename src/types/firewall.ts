@@ -19,7 +19,7 @@ export type ThreatCategory =
   | 'INVALID_TRANSACTION'
   | 'ANALYSIS_FAILURE';
 
-export type BankingIntent = 'BALANCE_INQUIRY' | 'TRANSFER' | 'OTHER' | 'UNKNOWN';
+export type BankingIntent = 'BALANCE_INQUIRY' | 'TRANSFER' | 'TRANSACTION_HISTORY' | 'OTHER' | 'UNKNOWN';
 
 export interface PolicyChecks {
   schema_valid: boolean;

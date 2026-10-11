@@ -24,6 +24,8 @@ export const DEMO_RECIPIENTS = [
   'carol_tech',
   'david_chen',
   'elena_finance',
+  'DEMO001',
+  'DEMO002',
 ];
 
 // Prompt Injection Signatures
@@ -145,83 +147,177 @@ export function extractIntentAndParams(
   // 1. Detect Intent
   let intent: BankingIntent = 'UNKNOWN';
 
+  const isHistoryQuery =
+    /\b(last\s+\d+\s+transactions?|transaction\s+history|recent\s+transactions?|past\s+transactions?|show\s+(?:my\s+)?(?:last\s+\d+\s+)?transactions?|account\s+history|statement)\b/i.test(lower);
   const isBalanceQuery =
-    /\b(balance|how\s+much\s+(money|funds|cash)|check\s+(my\s+)?account|available\s+funds)\b/i.test(lower);
+    /\b(balance|how\s+much\s+(?:money|funds|cash)|check\s+(?:my\s+)?account|available\s+funds)\b/i.test(lower);
   const isTransferQuery =
     /\b(transfer|send|wire|pay|move\s+money|remit)\b/i.test(lower);
 
-  if (isBalanceQuery && !isTransferQuery) {
-    intent = 'BALANCE_INQUIRY';
-  } else if (isTransferQuery) {
+  if (isTransferQuery) {
     intent = 'TRANSFER';
-  } else if (explicitParams?.recipient || explicitParams?.amount) {
+  } else if (explicitParams?.recipient || explicitParams?.amount !== undefined) {
     intent = 'TRANSFER';
+  } else if (isHistoryQuery) {
+    intent = 'TRANSACTION_HISTORY';
   } else if (isBalanceQuery) {
     intent = 'BALANCE_INQUIRY';
   } else {
     intent = 'OTHER';
   }
 
-  // 2. Extract Amount from text if not explicitly provided
-  if (amount === undefined) {
-    const amountMatches = text.match(/\$\s*([0-9]+(?:\.[0-9]{1,2})?)|([0-9]+(?:\.[0-9]{1,2})?)\s*(?:dollars|usd)/gi);
-    const plainNumMatches = text.match(/\b(?:transfer|send|wire|pay)\s+([0-9]+(?:\.[0-9]{1,2})?)\b/i);
+  // 2. Extract Amount from text and check for conflicts
+  // Check for ambiguous European decimal notation (comma followed by 1 or 2 digits, e.g. 100,50 or 1.000,50)
+  const europeanDecimalPattern = /(?:[\$₹€£]|(?:rs\.?|inr|usd|eur|gbp)(?:\b(?!\.)|\s))?\s*-?[0-9]+(?:[0-9.]*)?,[0-9]{1,2}(?!\d)/i;
+  if (europeanDecimalPattern.test(text)) {
+    ambiguities.push('Ambiguous European decimal notation detected (comma decimal separator, e.g. 100,50). Please use standard dot notation (e.g. 100.50).');
+  }
 
-    if (amountMatches && amountMatches.length > 1) {
-      ambiguities.push(`Multiple conflicting amounts detected in request: ${amountMatches.join(', ')}.`);
+  // Check for ambiguous Indian numbering comma grouping (2-digit groupings e.g. 1,00,000 Lakhs notation)
+  const indianCommaGroupingPattern = /-?[0-9]+(?:,[0-9]{2})+,[0-9]{3}(?:\.[0-9]+)?/;
+  if (indianCommaGroupingPattern.test(text)) {
+    ambiguities.push('Ambiguous Indian number grouping detected (Lakhs/Crores notation, e.g. 1,00,000). Please specify amount without ambiguous comma grouping.');
+  }
+
+  const currencyPrefixRegex = /(?:[\$₹€£]|(?:rs\.?|inr|usd|eur|gbp)(?:\b(?!\.)|\s))\s*(-?\s*[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)/gi;
+  const currencySuffixRegex = /(-?\s*[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*(?:[\$₹€£]|(?:dollars?|rupees?|inr|usd|eur|gbp|cents?)\b)/gi;
+  const actionVerbRegex = /\b(?:transfer|send|wire|pay)\s+(?:(?:[\$₹€£]|(?:rs\.?|inr|usd|eur|gbp)(?:\b(?!\.)|\s))\s*)?(-?\s*[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\b/i;
+
+  const rawExpressionMatches: string[] = [];
+  const parsedCandidates: number[] = [];
+
+  const addMatch = (matchStr: string, numGroup?: string) => {
+    rawExpressionMatches.push(matchStr.trim());
+    const isNegative = matchStr.includes('-') || (numGroup ? numGroup.includes('-') : false);
+    const rawDigits = (numGroup || matchStr).replace(/[^0-9.]/g, '');
+    if (rawDigits.length > 0) {
+      const val = parseFloat(rawDigits);
+      if (!isNaN(val)) {
+        const finalVal = isNegative ? -val : val;
+        parsedCandidates.push(finalVal);
+      }
     }
+  };
 
-    if (amountMatches && amountMatches.length > 0) {
-      const cleanedNum = amountMatches[0].replace(/[^0-9.]/g, '');
-      const parsed = parseFloat(cleanedNum);
-      if (!isNaN(parsed)) amount = parsed;
-    } else if (plainNumMatches && plainNumMatches[1]) {
-      const parsed = parseFloat(plainNumMatches[1]);
-      if (!isNaN(parsed)) amount = parsed;
+  let m;
+  while ((m = currencyPrefixRegex.exec(text)) !== null) {
+    addMatch(m[0], m[1]);
+  }
+  while ((m = currencySuffixRegex.exec(text)) !== null) {
+    addMatch(m[0], m[1]);
+  }
+
+  if (rawExpressionMatches.length === 0) {
+    const verbMatch = text.match(actionVerbRegex);
+    if (verbMatch && verbMatch[1]) {
+      addMatch(verbMatch[0], verbMatch[1]);
     }
   }
 
+  // Reject multiple distinct currency expressions even if numeric value is identical (e.g. $100 and ₹100)
+  if (rawExpressionMatches.length > 1) {
+    ambiguities.push(`Multiple currency expressions detected in request (${rawExpressionMatches.join(', ')}). Single unambiguous transfer amount required.`);
+  }
+
+  const uniqueNumericCandidates = Array.from(new Set(parsedCandidates));
+  if (uniqueNumericCandidates.length > 1) {
+    ambiguities.push(`Multiple conflicting amounts detected in request: ${uniqueNumericCandidates.join(', ')}.`);
+  }
+
+  // Check for conflict between explicit parameter and prompt text
+  if (explicitParams?.amount !== undefined) {
+    if (parsedCandidates.length > 0) {
+      const textAmount = parsedCandidates[0];
+      if (Math.abs(textAmount - explicitParams.amount) > 0.001) {
+        ambiguities.push(`Conflicting amounts: structured parameter ($${explicitParams.amount}) does not match amount in prompt text ($${textAmount}).`);
+      }
+    }
+    if (rawExpressionMatches.length > 1 || uniqueNumericCandidates.length > 1) {
+      ambiguities.push('Prompt text contains multiple ambiguous currency amounts while structured parameter is present.');
+    }
+  }
+
+  if (amount === undefined && parsedCandidates.length > 0) {
+    amount = parsedCandidates[0];
+  }
+
   // Check if multiple conflicting amounts exist in phrasing like "send 100 or make it 200"
-  const alternativeAmountPattern = /\b([0-9]+(?:\.[0-9]{2})?)\s*(?:or|instead\s+of|rather\s+than)\s*([0-9]+(?:\.[0-9]{2})?)\b/i;
+  const alternativeAmountPattern = /\b(-?[0-9]+(?:\.[0-9]{2})?)\s*(?:or|instead\s+of|rather\s+than)\s*(-?[0-9]+(?:\.[0-9]{2})?)\b/i;
   if (alternativeAmountPattern.test(text)) {
     ambiguities.push('Conflicting alternative amounts specified in request.');
   }
 
-  // 3. Extract Recipient from text if not explicitly provided
-  if (!recipient) {
-    // Check known demo recipients first
-    const foundRecipients: string[] = [];
-    for (const demoRecip of DEMO_RECIPIENTS) {
-      if (lower.includes(demoRecip.toLowerCase())) {
-        foundRecipients.push(demoRecip);
-      }
-    }
+  // 3. Extract Recipient from text and check for conflicts
+  const foundRecipients: string[] = [];
 
-    // Pattern for "to [name]"
-    const toMatches = text.match(/\b(?:to|recipient:?)\s+([a-zA-Z0-9_.-]+)/gi);
-    if (toMatches) {
-      for (const m of toMatches) {
-        const candidate = m.replace(/^(?:to|recipient:?)\s+/i, '').trim();
-        if (candidate && !['the', 'my', 'account', 'a', 'his', 'her', 'their'].includes(candidate.toLowerCase())) {
-          if (!foundRecipients.includes(candidate)) {
-            foundRecipients.push(candidate);
-          }
+  // Target recipient patterns:
+  // e.g. "to account DEMO002", "to DEMO002.", "to alice.eth", "recipient: bob_miller"
+  const targetPatterns = [
+    /\b(?:to|recipient:?)\s+(?:account\s+|acc\s+)?([a-zA-Z0-9_.-]+)/gi,
+  ];
+
+  for (const pat of targetPatterns) {
+    let match;
+    while ((match = pat.exec(text)) !== null) {
+      let candidate = match[1].trim();
+      // Strip trailing sentence punctuation: . , ; : ! ? without damaging valid identifiers
+      candidate = candidate.replace(/[.,;:!?]+$/, '').trim();
+
+      const ignoredWords = ['the', 'my', 'account', 'acc', 'a', 'his', 'her', 'their', 'someone', 'anyone'];
+      if (candidate && !ignoredWords.includes(candidate.toLowerCase())) {
+        if (!foundRecipients.includes(candidate)) {
+          foundRecipients.push(candidate);
         }
       }
     }
+  }
 
-    if (foundRecipients.length > 1) {
-      ambiguities.push(`Multiple distinct recipients detected in instruction: ${foundRecipients.join(' and ')}.`);
-    }
-
-    if (foundRecipients.length > 0) {
-      recipient = foundRecipients[0];
+  // Check for alternative recipients in phrasing like "to alice.eth or bob_miller"
+  const alternativeRecipPattern = /\b(?:to|recipient:?)\s+(?:account\s+|acc\s+)?([a-zA-Z0-9_.-]+)\s+(?:or|and)\s+(?:to\s+)?(?:account\s+|acc\s+)?([a-zA-Z0-9_.-]+)\b/gi;
+  let altMatch;
+  while ((altMatch = alternativeRecipPattern.exec(text)) !== null) {
+    for (const group of [altMatch[1], altMatch[2]]) {
+      const c = group.replace(/[.,;:!?]+$/, '').trim();
+      const ignoredWords = ['the', 'my', 'account', 'acc', 'a', 'his', 'her', 'their', 'someone', 'anyone'];
+      if (c && !ignoredWords.includes(c.toLowerCase()) && !foundRecipients.includes(c)) {
+        foundRecipients.push(c);
+      }
     }
   }
 
-  // 4. Extract Memo if phrased like "for dinner" or "memo: ..."
+  // Check allowlisted demo recipients, but ignore if preceded by "from (account)?"
+  for (const demoRecip of DEMO_RECIPIENTS) {
+    const fromPattern = new RegExp(`\\bfrom\\s+(?:account\\s+)?${demoRecip}\\b`, 'i');
+    if (lower.includes(demoRecip.toLowerCase()) && !fromPattern.test(text)) {
+      if (!foundRecipients.includes(demoRecip)) {
+        foundRecipients.push(demoRecip);
+      }
+    }
+  }
+
+  if (foundRecipients.length > 1) {
+    ambiguities.push(`Multiple distinct recipients detected in instruction: ${foundRecipients.join(' and ')}.`);
+  }
+
+  // Check for conflict between explicit parameter and prompt text
+  if (explicitParams?.recipient && foundRecipients.length > 0) {
+    const textRecip = foundRecipients[0];
+    const expRecip = explicitParams.recipient.trim();
+    if (textRecip.toLowerCase() !== expRecip.toLowerCase()) {
+      ambiguities.push(`Conflicting recipients: structured parameter "${expRecip}" does not match recipient in prompt text "${textRecip}".`);
+    }
+    if (foundRecipients.length > 1) {
+      ambiguities.push(`Prompt text contains multiple recipients (${foundRecipients.join(', ')}) while structured parameter specifies "${expRecip}".`);
+    }
+  }
+
+  if (!recipient && foundRecipients.length > 0) {
+    recipient = foundRecipients[0];
+  }
+
+  // 4. Extract Memo if phrased like "for dinner" or "memo: ..." or "with memo '...'"
   if (!memo) {
-    const memoMatch = text.match(/\b(?:for|memo:?|note:?)\s+["']?([^"'\n,.]+)["']?/i);
+    const memoMatch = text.match(/\b(?:for|memo:?|note:?|with\s+memo)\s+["']?([^"'\n,.]+)["']?/i);
     if (memoMatch && memoMatch[1]) {
       memo = memoMatch[1].trim();
     }

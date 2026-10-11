@@ -64,6 +64,13 @@ export function evaluateSecurityPolicy(
   let riskLevel: RiskLevel = threatResult.risk_level;
   const rationaleParts: string[] = [];
 
+  // Include specific detected ambiguity / conflict patterns in rationale
+  for (const pat of threatResult.detected_patterns) {
+    if (pat.startsWith('Conflicting') || pat.startsWith('Multiple')) {
+      rationaleParts.push(pat);
+    }
+  }
+
   // Ingest optional advisory LLM insights with zero trust (never blindly adopt approval)
   if (llmAdvisory?.suggested_threats) {
     for (const t of llmAdvisory.suggested_threats) {
@@ -125,9 +132,12 @@ export function evaluateSecurityPolicy(
     checks.amount_valid = false;
     threats.add('AMBIGUOUS_REQUEST');
     rationaleParts.push('Transfer request did not specify a valid monetary amount.');
-  } else {
-    // Balance inquiries don't require an amount
+  } else if (intent === 'BALANCE_INQUIRY' || intent === 'TRANSACTION_HISTORY') {
+    // Read-only queries do not require a monetary amount
     checks.amount_valid = true;
+  } else {
+    // Unknown or other intents must never default amount to valid
+    checks.amount_valid = false;
   }
 
   // Evaluate Recipient Validity
@@ -144,9 +154,12 @@ export function evaluateSecurityPolicy(
     checks.recipient_valid = false;
     threats.add('AMBIGUOUS_REQUEST');
     rationaleParts.push('Transfer request must specify an authorized recipient.');
-  } else {
-    // Balance inquiries don't require a recipient
+  } else if (intent === 'BALANCE_INQUIRY' || intent === 'TRANSACTION_HISTORY') {
+    // Read-only queries do not require a recipient
     checks.recipient_valid = true;
+  } else {
+    // Unknown or other intents must never default recipient to valid
+    checks.recipient_valid = false;
   }
 
   // Remove NONE if active threats exist
@@ -175,11 +188,16 @@ export function evaluateSecurityPolicy(
     riskLevel = 'HIGH';
     checks.policy_passed = false;
     rationaleParts.unshift('BLOCKED: Request attempted unauthorized extraction of system prompts or sensitive data.');
-  } else if (amount !== undefined && (!Number.isFinite(amount) || amount < 0)) {
+  } else if (amount !== undefined && (!Number.isFinite(amount) || isNaN(amount) || amount < 0)) {
     verdict = 'BLOCKED';
     riskLevel = 'HIGH';
     checks.policy_passed = false;
     rationaleParts.unshift('BLOCKED: Negative or non-finite transaction amount rejected by deterministic gate.');
+  } else if (amount === 0) {
+    verdict = 'REVIEW_REQUIRED';
+    riskLevel = 'MEDIUM';
+    checks.policy_passed = false;
+    rationaleParts.unshift('REVIEW_REQUIRED: Transfer amount cannot be zero.');
   } else if (hasAmbiguity || threats.has('AMBIGUOUS_REQUEST') || threats.has('INVALID_TRANSACTION')) {
     verdict = 'REVIEW_REQUIRED';
     if (riskLevel === 'LOW') riskLevel = 'MEDIUM';
@@ -191,6 +209,12 @@ export function evaluateSecurityPolicy(
     checks.policy_passed = true;
     checks.threat_scan_passed = true;
     rationaleParts.unshift('APPROVED: Benign balance inquiry verified against all deterministic security checks.');
+  } else if (intent === 'TRANSACTION_HISTORY') {
+    verdict = 'APPROVED';
+    riskLevel = 'LOW';
+    checks.policy_passed = true;
+    checks.threat_scan_passed = true;
+    rationaleParts.unshift('APPROVED: Read-only transaction history inquiry verified against all deterministic security checks.');
   } else if (intent === 'TRANSFER') {
     if (checks.recipient_valid && checks.amount_valid && checks.threat_scan_passed) {
       verdict = 'APPROVED';
@@ -203,10 +227,12 @@ export function evaluateSecurityPolicy(
       if (riskLevel === 'LOW') riskLevel = 'MEDIUM';
     }
   } else {
-    // Unknown or other intent
+    // Unknown or other intent - fail closed
     verdict = 'REVIEW_REQUIRED';
     riskLevel = 'MEDIUM';
     checks.policy_passed = false;
+    checks.recipient_valid = false;
+    checks.amount_valid = false;
     rationaleParts.unshift('REVIEW_REQUIRED: Intent could not be mapped to an authorized banking action.');
   }
 

@@ -14,7 +14,7 @@ import {
   EngineMode,
 } from './types/firewall';
 import { evaluateSecurityPolicy, CONFIG } from './security/policyEngine';
-import { ledgerStore } from './security/transactionGate';
+import { INITIAL_MOCK_TRANSACTIONS } from './security/mockLedgerClient';
 
 // Seeded initial demo verdicts to make the SOC live dashboard demonstrable immediately
 const INITIAL_DEMO_VERDICTS: FirewallVerdict[] = [
@@ -92,7 +92,7 @@ export const App: React.FC = () => {
   const [currentVerdict, setCurrentVerdict] = useState<FirewallVerdict | null>(null);
   const [verdictToken, setVerdictToken] = useState<string | undefined>(undefined);
   const [balance, setBalance] = useState<number>(CONFIG.DEMO_ACCOUNT_INITIAL_BALANCE);
-  const [transactions, setTransactions] = useState<MockTransaction[]>(ledgerStore.getTransactions());
+  const [transactions, setTransactions] = useState<MockTransaction[]>(INITIAL_MOCK_TRANSACTIONS);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionResult, setExecutionResult] = useState<{
@@ -113,9 +113,9 @@ export const App: React.FC = () => {
         }
       })
       .catch(() => {
-        // Fallback to local in-memory ledger
-        setBalance(ledgerStore.getBalance());
-        setTransactions(ledgerStore.getTransactions());
+        // Fallback to local demo default ledger
+        setBalance(CONFIG.DEMO_ACCOUNT_INITIAL_BALANCE);
+        setTransactions(INITIAL_MOCK_TRANSACTIONS);
       });
   }, []);
 
@@ -150,22 +150,18 @@ export const App: React.FC = () => {
       return { verdict: newVerdict, verdictToken: token };
     } catch {
       // Reliable fallback: evaluate locally using deterministic policy engine
+      // Offline fallback: evaluate locally using deterministic policy engine for UI preview only
       const fallbackVerdict = evaluateSecurityPolicy(payload);
-      let fallbackToken = undefined;
-      if (fallbackVerdict.verdict === 'APPROVED' && fallbackVerdict.intent === 'TRANSFER') {
-        fallbackToken = ledgerStore.registerApprovedVerdict(fallbackVerdict);
-      }
-
       setCurrentVerdict(fallbackVerdict);
-      setVerdictToken(fallbackToken);
+      setVerdictToken(undefined);
       setVerdicts((prev) => [fallbackVerdict, ...prev]);
-      return { verdict: fallbackVerdict, verdictToken: fallbackToken };
+      return { verdict: fallbackVerdict, verdictToken: undefined };
     } finally {
       setIsAnalyzing(false);
     }
   };
 
-  // Execute transfer handler via server authorization gate
+  // Execute transfer handler via server authorization gate (strictly fail-closed)
   const handleExecuteTransfer = async (verdict: FirewallVerdict, token: string) => {
     if (!verdict.extracted_parameters?.recipient || !verdict.extracted_parameters?.amount) {
       return;
@@ -190,9 +186,9 @@ export const App: React.FC = () => {
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
 
-      if (data.success && data.transaction) {
+      if (res.ok && data?.success && data?.transaction) {
         setBalance(data.updated_balance);
         setTransactions((prev) => [data.transaction, ...prev]);
         setExecutionResult({
@@ -203,32 +199,21 @@ export const App: React.FC = () => {
       } else {
         setExecutionResult({
           success: false,
-          message: data.error || 'Transaction gate rejected the request.',
+          message: data?.error || `Transaction gate rejected the request (HTTP ${res.status}).`,
         });
       }
     } catch {
-      // Local fallback execution
-      const localResult = ledgerStore.executeTransfer(payload);
-      if (localResult.success && localResult.transaction) {
-        setBalance(localResult.updated_balance);
-        setTransactions(ledgerStore.getTransactions());
-        setExecutionResult({
-          success: true,
-          message: `Transfer of $${localResult.transaction.amount} to ${localResult.transaction.recipient} authorized and executed!`,
-          txId: localResult.transaction.id,
-        });
-      } else {
-        setExecutionResult({
-          success: false,
-          message: localResult.error || 'Transaction gate rejected the request.',
-        });
-      }
+      // Fail closed: Do NOT execute in browser memory when server gate is unreachable
+      setExecutionResult({
+        success: false,
+        message: 'Security Gate Error: Server authorization gate is unreachable. Client-side execution fallback is disabled for security (fail-closed).',
+      });
     } finally {
       setIsExecuting(false);
     }
   };
 
-  // Raw transfer execution for sandbox testing (tamper bypass & idempotency tests)
+  // Raw transfer execution for sandbox testing (strictly server-side, fail-closed)
   const handleExecuteRawTransfer = async (rawPayload: {
     recipient: string;
     amount: number;
@@ -252,36 +237,41 @@ export const App: React.FC = () => {
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
-      if (data.success && data.transaction) {
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success && data?.transaction) {
         setBalance(data.updated_balance);
         setTransactions((prev) => [data.transaction, ...prev]);
+        return data;
       }
-      return data;
+      return data || { success: false, error: `Server returned HTTP ${res.status}` };
     } catch {
-      const localRes = ledgerStore.executeTransfer(payload);
-      if (localRes.success && localRes.transaction) {
-        setBalance(localRes.updated_balance);
-        setTransactions(ledgerStore.getTransactions());
-      }
-      return localRes;
+      return {
+        success: false,
+        error: 'Security Gate Error: Server authorization gate unreachable. Client-side execution fallback is disabled (fail-closed).',
+      };
     }
   };
 
-  // Reset sandbox ledger
+  // Reset sandbox ledger (passes through serverless API with authorization)
   const handleResetLedger = async () => {
     try {
-      await fetch('/api/ledger', {
+      const res = await fetch('/api/ledger', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'reset' }),
       });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data) {
+        setBalance(data.balance);
+        setTransactions(data.transactions);
+      } else if (data?.error) {
+        alert(`Ledger Reset: ${data.error}`);
+      }
     } catch {
-      // ignore
+      // Offline fallback for local sandbox development
+      setBalance(CONFIG.DEMO_ACCOUNT_INITIAL_BALANCE);
+      setTransactions(INITIAL_MOCK_TRANSACTIONS);
     }
-    ledgerStore.resetLedger();
-    setBalance(ledgerStore.getBalance());
-    setTransactions(ledgerStore.getTransactions());
   };
 
   return (

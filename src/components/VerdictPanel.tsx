@@ -164,11 +164,22 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
                   }`}
                 >
                   <span className="font-mono text-[11px] truncate">{label}</span>
-                  {passed ? (
-                    <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 ml-1" />
-                  ) : (
-                    <XCircle className="w-4 h-4 text-rose-400 shrink-0 ml-1" />
-                  )}
+                  <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                    <span
+                      className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded border uppercase ${
+                        passed
+                          ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                          : 'bg-rose-500/20 border-rose-500/40 text-rose-400'
+                      }`}
+                    >
+                      {passed ? 'PASSED' : 'FAILED'}
+                    </span>
+                    {passed ? (
+                      <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                    )}
+                  </div>
                 </div>
               );
             })}
