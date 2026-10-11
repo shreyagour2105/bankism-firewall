@@ -1164,6 +1164,51 @@ describe('Issue 16 — Threat category rendering & multiple categories separatio
     expect(textOnly).not.toContain('svgDecision Rationale');
     expect(textOnly).not.toContain('PASSEDsvg');
     expect(textOnly).not.toContain('FAILEDsvg');
+
+    // 8. Distinct layout elements (h3 heading + div badge)
+    expect(html).toMatch(/<h3[^>]*data-testid="verdict-title"[^>]*>BLOCKED — THREAT NEUTRALIZED<\/h3>/);
+    expect(html).toMatch(/<div[^>]*data-testid="verdict-risk-badge"[^>]*>RISK: HIGH<\/div>/);
+  });
+
+  it('VerdictPanel renders REVIEW REQUIRED — POLICY BOUNDARY with separate title and RISK: MEDIUM label', () => {
+    const reviewRequiredVerdict: FirewallVerdict = {
+      request_id: 'req_review_boundary_01',
+      timestamp: new Date().toISOString(),
+      verdict: 'REVIEW_REQUIRED',
+      risk_level: 'MEDIUM',
+      threat_category: ['OBFUSCATION'],
+      intent: 'TRANSFER',
+      rationale: 'Review required: Unicode zero-width characters detected in transfer instruction.',
+      normalised_request: 'transfer $500 to alice.eth',
+      requires_confirmation: true,
+      transaction_executed: false,
+      checks: {
+        schema_valid: true,
+        input_normalised: true,
+        threat_scan_passed: false,
+        policy_passed: false,
+        recipient_valid: true,
+        amount_valid: true,
+      },
+      engine_mode: 'DETERMINISTIC_RULES',
+      latency_ms: 9,
+    };
+
+    const html = renderToStaticMarkup(
+      React.createElement(VerdictPanel, {
+        verdict: reviewRequiredVerdict,
+      })
+    );
+
+    // Verify distinct layout elements (h3 heading and div badge)
+    expect(html).toMatch(/<h3[^>]*data-testid="verdict-title"[^>]*>REVIEW REQUIRED — POLICY BOUNDARY<\/h3>/);
+    expect(html).toMatch(/<div[^>]*data-testid="verdict-risk-badge"[^>]*>RISK: MEDIUM<\/div>/);
+
+    // Assert neither HTML nor text content concatenates title and risk
+    expect(html).not.toContain('REVIEW REQUIRED — POLICY BOUNDARYRISK: MEDIUM');
+    const textOnly = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    expect(textOnly).toContain('REVIEW REQUIRED — POLICY BOUNDARY RISK: MEDIUM');
+    expect(textOnly).not.toContain('REVIEW REQUIRED — POLICY BOUNDARYRISK: MEDIUM');
   });
 });
 

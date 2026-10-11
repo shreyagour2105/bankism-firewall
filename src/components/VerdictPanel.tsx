@@ -95,20 +95,20 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
         <div className="flex items-center gap-3">
           {verdictStyles.icon}
           <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span
+            <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+              <h3
                 data-testid="verdict-title"
-                className="font-mono font-bold text-base sm:text-lg tracking-wide"
+                className="font-mono font-bold text-base sm:text-lg tracking-wide m-0"
               >
                 {verdictStyles.title}
-              </span>
-              {' '}
-              <span
+              </h3>
+              <span className="sr-only">{' '}</span>
+              <div
                 data-testid="verdict-risk-badge"
-                className={`text-[11px] font-mono px-2 py-0.5 rounded border uppercase font-semibold ${riskBadgeStyles}`}
+                className={`inline-flex items-center text-[11px] font-mono px-2.5 py-0.5 rounded border uppercase font-semibold ${riskBadgeStyles}`}
               >
                 RISK: {verdict.risk_level}
-              </span>
+              </div>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
               Request ID: <span className="font-mono text-slate-300">{verdict.request_id}</span> • Latency:{' '}
