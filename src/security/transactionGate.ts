@@ -9,6 +9,7 @@
 import crypto from 'node:crypto';
 import { MockTransaction, ExecuteTransferPayload, FirewallVerdict } from '../types/firewall';
 import { CONFIG } from './policyEngine';
+import { DEMO_RECIPIENTS } from './threatScanner';
 
 export interface LedgerState {
   current_balance: number;
@@ -287,7 +288,15 @@ class MockLedgerStore {
       };
     }
 
-    // 4. Strict Amount & Balance Invariant Check
+    // 4. Strict Recipient, Amount & Balance Invariant Check
+    if (!DEMO_RECIPIENTS.includes(recipient)) {
+      return {
+        success: false,
+        error: `GATE_REJECTION: Recipient "${recipient}" is not in the authorized demo peer directory.`,
+        updated_balance: this.balance,
+      };
+    }
+
     if (amount <= 0 || !Number.isFinite(amount) || isNaN(amount)) {
       return {
         success: false,

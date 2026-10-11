@@ -112,7 +112,15 @@ export function evaluateSecurityPolicy(
   }
 
   // Evaluate Amount Validity
-  if (amount !== undefined) {
+  const hasMalformedOrNegativeSyntax = threatResult.detected_patterns.some(
+    p => p.includes('Malformed monetary amount token') || p.includes('Negative monetary amount syntax')
+  );
+
+  if (hasMalformedOrNegativeSyntax) {
+    checks.amount_valid = false;
+    threats.add('INVALID_TRANSACTION');
+    rationaleParts.push('Transfer request contains negative or malformed monetary amount syntax.');
+  } else if (amount !== undefined) {
     if (!Number.isFinite(amount) || isNaN(amount) || amount < 0) {
       checks.amount_valid = false;
       threats.add('INVALID_TRANSACTION');
@@ -193,6 +201,12 @@ export function evaluateSecurityPolicy(
     riskLevel = 'HIGH';
     checks.policy_passed = false;
     rationaleParts.unshift('BLOCKED: Negative or non-finite transaction amount rejected by deterministic gate.');
+  } else if (hasMalformedOrNegativeSyntax) {
+    verdict = 'BLOCKED';
+    riskLevel = 'HIGH';
+    checks.amount_valid = false;
+    checks.policy_passed = false;
+    rationaleParts.unshift('BLOCKED: Negative or malformed monetary syntax rejected by deterministic gate.');
   } else if (amount === 0) {
     verdict = 'REVIEW_REQUIRED';
     riskLevel = 'MEDIUM';

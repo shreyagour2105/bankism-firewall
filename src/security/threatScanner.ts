@@ -64,13 +64,22 @@ const POLICY_OVERRIDE_PATTERNS = [
   /\blimit_override\s*=\s*true\b/i,
 ];
 
-// Data Exfiltration & System Leakage Signatures
+// Data Exfiltration & Credential / Secret Extraction Signatures
 const DATA_EXFILTRATION_PATTERNS = [
-  /\b(reveal|show|print|display|tell\s+me|dump|leak)\s+(the\s+)?(system\s+prompt|initial\s+instructions|secret\s+keys?|api\s+keys?|credentials?)\b/i,
+  // Direct exfiltration verbs targeting keys, tokens, credentials, secrets
+  /\b(reveal|show|print|display|tell(?:\s+me)?|dump|leak|extract|give(?:\s+me)?|provide|expose|share|output|read|unveil)\s+(?:the\s+|your\s+|all\s+|system\s+|any\s+|our\s+)?(?:secret\s+|signing\s+|admin\s+|api\s+|private\s+|auth(?:orization)?\s+|root\s+|encryption\s+)?(?:keys?|tokens?|passwords?|credentials?|secrets?)\b/i,
+
+  // Multi-word phrases targeting signing keys, admin tokens, credentials anywhere after an extraction verb
+  /\b(reveal|show|print|display|tell(?:\s+me)?|dump|leak|extract|give(?:\s+me)?|provide|expose|share|output)\s+.*?\b(signing\s+key|admin\s+token|admin_token|signing_key|firewall_signing_key|admin_reset_token|secret\s+key|api\s+key|private\s+key|credentials?|root\s+password)\b/i,
+
+  // Extraction of system instructions, security rules, prompts (including hidden/internal)
+  /\b(reveal|show|print|display|tell(?:\s+me)?|dump|leak|extract|give(?:\s+me)?|provide|expose|share|output)\s+.*?\b(system\s+prompt|initial\s+instructions|system\s+instructions|security\s+instructions|hidden\s+(?:system\s+|security\s+)?instructions?|internal\s+instructions?|internal\s+rules?)\b/i,
+
+  // Questions probing for secrets, keys, tokens, or hidden instructions
+  /\bwhat\s+(?:is|are)\s+(?:the|your)\s+(?:secret|signing|admin|api|private|root|system|hidden|internal)\s+(?:key|token|password|credential|secret|prompt|instruction)s?\b/i,
   /\b(dump|export|extract|list)\s+(all\s+)?(user\s+accounts?|database\s+records?|private\s+ledger|customer\s+data)\b/i,
-  /\bwhat\s+(is|are)\s+your\s+(secret|internal|system)\s+(instructions|prompt|rules)\b/i,
-  /\bgive\s+me\s+your\s+api\s+key\b/i,
-  /\bwhat\s+is\s+the\s+root\s+password\b/i,
+  /\bgive\s+me\s+your\s+(api\s+key|signing\s+key|admin\s+token|secret|password)\b/i,
+  /\bwhat\s+is\s+the\s+(root\s+password|signing\s+key|admin\s+token|secret\s+key)\b/i,
 ];
 
 // Malicious Memo & SQLi Signatures
@@ -166,7 +175,21 @@ export function extractIntentAndParams(
     intent = 'OTHER';
   }
 
-  // 2. Extract Amount from text and check for conflicts
+  // 1. Explicitly detect and reject negative monetary syntax (e.g. -$100, $-100, - ₹500, -100 dollars, transfer -100)
+  const negativeMonetaryPattern = /(?:-\s*[\$₹€£]|[\$₹€£]\s*-|-\s*(?:rs\.?|inr|usd|eur|gbp)(?:\b(?!\.)|\s)|(?:rs\.?|inr|usd|eur|gbp)\s*-|-\s*[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?\s*(?:[\$₹€£]|dollars?|rupees?|inr|usd|eur|gbp|cents?\b)|\b(?:transfer|send|wire|pay)\s+-\s*[0-9]+)/i;
+  const hasNegativeMonetarySyntax = negativeMonetaryPattern.test(text);
+  if (hasNegativeMonetarySyntax) {
+    ambiguities.push('Negative monetary amount syntax detected. Transfers cannot have negative amounts.');
+  }
+
+  // 2. Validate complete monetary token (e.g. reject $500abc, 500abc dollars, ₹100xyz, -$500foo)
+  // Ensures invalid non-numeric/alphabetic suffix attached to a currency amount fails closed
+  const malformedAmountPattern = /(?:-?\s*[\$₹€£]|-?\s*(?:rs\.?|inr|usd|eur|gbp)(?:\b(?!\.)|\s))\s*-?[0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?[a-zA-Z_]+|-?[0-9]+(?:,[0-9]+)*(?:\.[0-9]+)?[a-zA-Z_]+(?:\s*(?:[\$₹€£]|(?:dollars?|rupees?|inr|usd|eur|gbp|cents?)\b))/i;
+  const isMalformedAmountToken = malformedAmountPattern.test(text);
+  if (isMalformedAmountToken) {
+    ambiguities.push('Malformed monetary amount token detected. Amount contains invalid non-numeric suffix or formatting.');
+  }
+
   // Check for ambiguous European decimal notation (comma followed by 1 or 2 digits, e.g. 100,50 or 1.000,50)
   const europeanDecimalPattern = /(?:[\$₹€£]|(?:rs\.?|inr|usd|eur|gbp)(?:\b(?!\.)|\s))?\s*-?[0-9]+(?:[0-9.]*)?,[0-9]{1,2}(?!\d)/i;
   if (europeanDecimalPattern.test(text)) {
@@ -179,21 +202,24 @@ export function extractIntentAndParams(
     ambiguities.push('Ambiguous Indian number grouping detected (Lakhs/Crores notation, e.g. 1,00,000). Please specify amount without ambiguous comma grouping.');
   }
 
-  const currencyPrefixRegex = /(?:[\$₹€£]|(?:rs\.?|inr|usd|eur|gbp)(?:\b(?!\.)|\s))\s*(-?\s*[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)/gi;
-  const currencySuffixRegex = /(-?\s*[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*(?:[\$₹€£]|(?:dollars?|rupees?|inr|usd|eur|gbp|cents?)\b)/gi;
-  const actionVerbRegex = /\b(?:transfer|send|wire|pay)\s+(?:(?:[\$₹€£]|(?:rs\.?|inr|usd|eur|gbp)(?:\b(?!\.)|\s))\s*)?(-?\s*[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\b/i;
+  const currencyPrefixRegex = /(?:-?\s*(?:[\$₹€£]|(?:rs\.?|inr|usd|eur|gbp)(?:\b(?!\.)|\s))\s*-?\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?))(?![0-9a-zA-Z_])/gi;
+  const currencySuffixRegex = /(-?\s*[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*(?:[\$₹€£]|(?:dollars?|rupees?|inr|usd|eur|gbp|cents?)\b)(?![0-9a-zA-Z_])/gi;
+  const actionVerbRegex = /\b(?:transfer|send|wire|pay)\s+(?:-?\s*(?:[\$₹€£]|(?:rs\.?|inr|usd|eur|gbp)(?:\b(?!\.)|\s))\s*-?\s*)?(-?\s*[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)(?![0-9a-zA-Z_])\b/i;
 
   const rawExpressionMatches: string[] = [];
   const parsedCandidates: number[] = [];
 
   const addMatch = (matchStr: string, numGroup?: string) => {
     rawExpressionMatches.push(matchStr.trim());
-    const isNegative = matchStr.includes('-') || (numGroup ? numGroup.includes('-') : false);
+    const isNegative =
+      matchStr.includes('-') ||
+      (numGroup ? numGroup.includes('-') : false) ||
+      hasNegativeMonetarySyntax;
     const rawDigits = (numGroup || matchStr).replace(/[^0-9.]/g, '');
     if (rawDigits.length > 0) {
       const val = parseFloat(rawDigits);
       if (!isNaN(val)) {
-        const finalVal = isNegative ? -val : val;
+        const finalVal = isNegative ? -Math.abs(val) : val;
         parsedCandidates.push(finalVal);
       }
     }
@@ -407,9 +433,10 @@ export function scanForThreats(
     }
   }
 
-  // 6. Data Exfiltration Scan
+  // 6. Data Exfiltration Scan (Check prompt text, deobfuscated input, and memo)
+  const textAndMemoToCheck = [deobfuscated, explicitParams?.memo].filter(Boolean).join(' ');
   for (const pattern of DATA_EXFILTRATION_PATTERNS) {
-    if (pattern.test(deobfuscated)) {
+    if (pattern.test(textAndMemoToCheck)) {
       threats.push('DATA_EXFILTRATION');
       detectedPatterns.push(`Sensitive data exfiltration request: ${pattern.toString()}`);
       if (riskLevel !== 'CRITICAL') riskLevel = 'HIGH';
@@ -450,6 +477,9 @@ export function scanForThreats(
   // 9. Ambiguity and Conflict Checks
   if (ambiguities.length > 0) {
     threats.push('AMBIGUOUS_REQUEST');
+    if (ambiguities.some(a => a.includes('Malformed') || a.includes('Negative'))) {
+      threats.push('INVALID_TRANSACTION');
+    }
     detectedPatterns.push(...ambiguities);
     if (riskLevel === 'LOW') riskLevel = 'MEDIUM';
   }
