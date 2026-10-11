@@ -13,6 +13,8 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { extractIntentAndParams } from '../threatScanner';
 import { evaluateSecurityPolicy } from '../policyEngine';
 import {
@@ -21,6 +23,8 @@ import {
   getSigningKey,
   ledgerStore,
 } from '../transactionGate';
+import { VerdictPanel } from '../../components/VerdictPanel';
+import { FirewallVerdict } from '../../types/firewall';
 
 // ─── ISSUE 1: Currency amount extraction ────────────────────────────────────
 
@@ -969,6 +973,127 @@ describe('Issue 15 — Server-side execution gate independent validation', () =>
     });
     expect(res.success).toBe(false);
     expect(res.error).toContain('GATE_REJECTION');
+  });
+});
+
+// ─── ISSUE 16: Threat Category Rendering & Separation ────────────────────────
+
+describe('Issue 16 — Threat category rendering & multiple categories separation', () => {
+  it('Policy engine generates multiple categories including AMBIGUOUS_REQUEST and INVALID_TRANSACTION for "Transfer -$100"', () => {
+    const verdict = evaluateSecurityPolicy({
+      raw_input: 'Transfer -$100',
+    });
+
+    expect(verdict.verdict).not.toBe('APPROVED');
+    expect(Array.isArray(verdict.threat_category)).toBe(true);
+    expect(verdict.threat_category).toContain('AMBIGUOUS_REQUEST');
+    expect(verdict.threat_category).toContain('INVALID_TRANSACTION');
+    expect(verdict.threat_category.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('VerdictPanel renders AMBIGUOUS REQUEST and INVALID TRANSACTION as separate badges without concatenation', () => {
+    const multiCategoryVerdict: FirewallVerdict = {
+      request_id: 'req_multi_cat_01',
+      timestamp: new Date().toISOString(),
+      verdict: 'BLOCKED',
+      risk_level: 'HIGH',
+      threat_category: ['AMBIGUOUS_REQUEST', 'INVALID_TRANSACTION'],
+      intent: 'TRANSFER',
+      rationale: 'Transfer request contains negative amount and lacks recipient.',
+      normalised_request: 'transfer -$100',
+      requires_confirmation: false,
+      transaction_executed: false,
+      checks: {
+        schema_valid: true,
+        input_normalised: true,
+        threat_scan_passed: false,
+        policy_passed: false,
+        recipient_valid: false,
+        amount_valid: false,
+      },
+      engine_mode: 'DETERMINISTIC_RULES',
+      latency_ms: 10,
+    };
+
+    const html = renderToStaticMarkup(
+      React.createElement(VerdictPanel, {
+        verdict: multiCategoryVerdict,
+        initialJsonOpen: true,
+      })
+    );
+
+    // Must render separate badges with distinct test IDs and labels
+    expect(html).toContain('data-testid="threat-badge-AMBIGUOUS_REQUEST"');
+    expect(html).toContain('data-testid="threat-badge-INVALID_TRANSACTION"');
+    expect(html).toContain('AMBIGUOUS REQUEST');
+    expect(html).toContain('INVALID TRANSACTION');
+
+    // MUST NOT concatenate into "AMBIGUOUS REQUESTINVALID TRANSACTION"
+    expect(html).not.toContain('AMBIGUOUS REQUESTINVALID TRANSACTION');
+
+    // Structured JSON Verdict must remain consistent with source of truth
+    expect(html).toContain('&quot;AMBIGUOUS_REQUEST&quot;');
+    expect(html).toContain('&quot;INVALID_TRANSACTION&quot;');
+  });
+
+  it('VerdictPanel handles single category safely without concatenation', () => {
+    const singleCategoryVerdict: FirewallVerdict = {
+      request_id: 'req_single_cat_01',
+      timestamp: new Date().toISOString(),
+      verdict: 'BLOCKED',
+      risk_level: 'CRITICAL',
+      threat_category: ['PROMPT_INJECTION'],
+      intent: 'TRANSFER',
+      rationale: 'Direct injection detected.',
+      normalised_request: 'ignore instructions',
+      requires_confirmation: false,
+      transaction_executed: false,
+      checks: {
+        schema_valid: true,
+        input_normalised: true,
+        threat_scan_passed: false,
+        policy_passed: false,
+        recipient_valid: false,
+        amount_valid: false,
+      },
+      engine_mode: 'DETERMINISTIC_RULES',
+      latency_ms: 5,
+    };
+
+    const html = renderToStaticMarkup(React.createElement(VerdictPanel, { verdict: singleCategoryVerdict }));
+
+    expect(html).toContain('data-testid="threat-badge-PROMPT_INJECTION"');
+    expect(html).toContain('PROMPT INJECTION');
+  });
+
+  it('VerdictPanel handles zero categories safely with fallback badge', () => {
+    const zeroCategoryVerdict: FirewallVerdict = {
+      request_id: 'req_zero_cat_01',
+      timestamp: new Date().toISOString(),
+      verdict: 'APPROVED',
+      risk_level: 'LOW',
+      threat_category: [],
+      intent: 'BALANCE_INQUIRY',
+      rationale: 'Harmless inquiry.',
+      normalised_request: 'balance',
+      requires_confirmation: false,
+      transaction_executed: false,
+      checks: {
+        schema_valid: true,
+        input_normalised: true,
+        threat_scan_passed: true,
+        policy_passed: true,
+        recipient_valid: true,
+        amount_valid: true,
+      },
+      engine_mode: 'DETERMINISTIC_RULES',
+      latency_ms: 5,
+    };
+
+    const html = renderToStaticMarkup(React.createElement(VerdictPanel, { verdict: zeroCategoryVerdict }));
+
+    expect(html).toContain('data-testid="threat-badge-none"');
+    expect(html).toContain('NONE');
   });
 });
 

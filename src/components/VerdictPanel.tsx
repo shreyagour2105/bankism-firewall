@@ -22,6 +22,7 @@ interface VerdictPanelProps {
   onExecuteTransfer?: (verdict: FirewallVerdict, token: string) => void;
   isExecuting?: boolean;
   executionResult?: { success: boolean; message: string; txId?: string } | null;
+  initialJsonOpen?: boolean;
 }
 
 export const VerdictPanel: React.FC<VerdictPanelProps> = ({
@@ -30,9 +31,10 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
   onExecuteTransfer,
   isExecuting = false,
   executionResult = null,
+  initialJsonOpen = false,
 }) => {
   const [copied, setCopied] = useState(false);
-  const [isJsonOpen, setIsJsonOpen] = useState(false);
+  const [isJsonOpen, setIsJsonOpen] = useState(initialJsonOpen);
 
   if (!verdict) {
     return (
@@ -132,25 +134,49 @@ export const VerdictPanel: React.FC<VerdictPanelProps> = ({
           <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
             Threat Categories Flagged
           </h4>
-          <div className="flex flex-wrap gap-2">
-            {verdict.threat_category.map((cat, idx) => (
+          {!Array.isArray(verdict.threat_category) || verdict.threat_category.length === 0 ? (
+            <div className="flex flex-wrap gap-2">
               <span
-                key={`${cat}-${idx}`}
-                className={`text-xs px-2.5 py-1 rounded-md font-mono border inline-flex items-center gap-1.5 ${
-                  cat === 'NONE'
-                    ? 'bg-slate-800/60 text-slate-300 border-slate-700'
-                    : 'bg-rose-500/15 text-rose-200 border-rose-500/30 font-semibold'
-                }`}
+                data-testid="threat-badge-none"
+                className="text-xs px-2.5 py-1 rounded-md font-mono border bg-slate-800/60 text-slate-300 border-slate-700 inline-flex items-center gap-1.5"
               >
-                {cat === 'NONE' ? (
-                  <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
-                ) : (
-                  <ShieldAlert className="w-3.5 h-3.5 text-rose-400 shrink-0" aria-hidden="true" />
-                )}
-                <span>{cat.replace(/_/g, ' ')}</span>
+                <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
+                <span>NONE</span>
               </span>
-            ))}
-          </div>
+            </div>
+          ) : (
+            <ul
+              role="list"
+              aria-label="Threat Categories Flagged"
+              data-testid="threat-categories-list"
+              className="flex flex-wrap gap-2 list-none p-0 m-0"
+            >
+              {verdict.threat_category.map((cat, idx) => {
+                const isNone = cat === 'NONE';
+                const label = isNone ? 'NONE' : cat.replace(/_/g, ' ');
+                return (
+                  <li key={`${cat}-${idx}`} className="inline-flex">
+                    <span
+                      data-testid={`threat-badge-${cat}`}
+                      className={`text-xs px-2.5 py-1 rounded-md font-mono border inline-flex items-center gap-1.5 ${
+                        isNone
+                          ? 'bg-slate-800/60 text-slate-300 border-slate-700'
+                          : 'bg-rose-500/15 text-rose-200 border-rose-500/30 font-semibold'
+                      }`}
+                    >
+                      {isNone ? (
+                        <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
+                      ) : (
+                        <ShieldAlert className="w-3.5 h-3.5 text-rose-400 shrink-0" aria-hidden="true" />
+                      )}
+                      <span>{label}</span>
+                    </span>
+                    {' '}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
 
         {/* Individual Policy Checks Grid */}
