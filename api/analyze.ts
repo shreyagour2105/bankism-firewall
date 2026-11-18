@@ -5,9 +5,9 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { evaluateSecurityPolicy, createFailClosedVerdict } from '../src/security/policyEngine';
-import { ledgerStore } from '../src/security/transactionGate';
-import { AnalyzeRequestPayload, RiskLevel, ThreatCategory } from '../src/types/firewall';
+import { evaluateSecurityPolicy, createFailClosedVerdict } from '../src/security/policyEngine.js';
+import { ledgerStore } from '../src/security/transactionGate.js';
+import type { AnalyzeRequestPayload, RiskLevel, ThreatCategory } from '../src/types/firewall.js';
 
 export type ApiRequest = IncomingMessage & { body?: any };
 export type ApiResponse = ServerResponse;

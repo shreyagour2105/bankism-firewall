@@ -6,7 +6,7 @@
 
 import crypto from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { ledgerStore } from '../src/security/transactionGate';
+import { ledgerStore } from '../src/security/transactionGate.js';
 
 export type ApiRequest = IncomingMessage & { body?: any };
 export type ApiResponse = ServerResponse;

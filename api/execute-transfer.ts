@@ -5,8 +5,8 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { ledgerStore } from '../src/security/transactionGate';
-import { ExecuteTransferPayload } from '../src/types/firewall';
+import { ledgerStore } from '../src/security/transactionGate.js';
+import type { ExecuteTransferPayload } from '../src/types/firewall.js';
 
 export type ApiRequest = IncomingMessage & { body?: any };
 export type ApiResponse = ServerResponse;
