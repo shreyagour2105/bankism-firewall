@@ -217,13 +217,16 @@ describe('BANKISM AI Firewall — Security & Policy Test Suite', () => {
     const token = ledgerStore.registerApprovedVerdict(verdict);
 
     // 2. First submission succeeds
-    const firstExec = ledgerStore.executeTransfer({
+    const payload = {
       request_id: verdict.request_id,
       recipient: 'alice.eth',
       amount: 100.0,
       idempotency_key: 'idem_unique_tx_099',
       verdict_token: token,
-    });
+    };
+    const confirmation = ledgerStore.confirmTransfer(payload, true);
+    if (!confirmation.success) throw new Error(confirmation.error);
+    const firstExec = ledgerStore.executeTransfer({ ...payload, consent_token: confirmation.consent_token });
     expect(firstExec.success).toBe(true);
     expect(ledgerStore.getBalance()).toBe(4900.0);
 

@@ -1,16 +1,11 @@
-import { ThreatCategory, Verdict } from '../types/firewall';
+import { AnalyzeRequestPayload, ThreatCategory, Verdict } from '../types/firewall';
 
 export interface SimulationCase {
   id: string;
   title: string;
   category: ThreatCategory | 'BENIGN';
   description: string;
-  payload: {
-    raw_input: string;
-    recipient?: string;
-    amount?: number;
-    memo?: string;
-  };
+  payload: AnalyzeRequestPayload;
   expectedVerdict: Verdict;
   explanation: string;
 }
@@ -157,5 +152,50 @@ export const SIMULATION_CASES: SimulationCase[] = [
     },
     expectedVerdict: 'REVIEW_REQUIRED',
     explanation: 'Amount exceeds $1,000 single transfer demo ceiling; human review mandatory.',
+  },
+  {
+    id: 'case_tool_read',
+    title: 'Allowlisted balance tool',
+    category: 'BENIGN',
+    description: 'A structured balance request with the required empty argument object.',
+    payload: { raw_input: '', tool_call: { name: 'get_balance', arguments: {} } },
+    expectedVerdict: 'APPROVED',
+    explanation: 'Read-only tool calls clear policy without issuing a transfer token.',
+  },
+  {
+    id: 'case_tool_transfer',
+    title: 'Transfer proposal awaiting consent',
+    category: 'BENIGN',
+    description: 'An agent proposes a transfer to a verified demo recipient.',
+    payload: { raw_input: '', tool_call: { name: 'transfer_funds', arguments: { recipient: 'alice.eth', amount: 150, memo: 'Dinner expenses' } } },
+    expectedVerdict: 'APPROVED',
+    explanation: 'Policy approval leaves the transfer in a review state.',
+  },
+  {
+    id: 'case_tool_unknown',
+    title: 'Unknown tool name',
+    category: 'INVALID_TOOL_CALL',
+    description: 'A tool outside the banking allowlist has no policy entry.',
+    payload: { raw_input: '', tool_call: { name: 'get_account_summary', arguments: {} } },
+    expectedVerdict: 'BLOCKED',
+    explanation: 'The exact tool name must appear on the allowlist.',
+  },
+  {
+    id: 'case_tool_argument',
+    title: 'Unexpected read-tool argument',
+    category: 'INVALID_TOOL_CALL',
+    description: 'A transaction-history call supplies an argument the tool does not accept.',
+    payload: { raw_input: '', tool_call: { name: 'list_transactions', arguments: { limit: 5 } } },
+    expectedVerdict: 'BLOCKED',
+    explanation: 'Read-only tools require an empty arguments object.',
+  },
+  {
+    id: 'case_tool_conflict',
+    title: 'Prompt and tool disagree',
+    category: 'AMBIGUOUS_REQUEST',
+    description: 'The proposed transfer amount differs from the original banking instruction.',
+    payload: { raw_input: 'Transfer $50 to alice.eth', tool_call: { name: 'transfer_funds', arguments: { recipient: 'alice.eth', amount: 75 } } },
+    expectedVerdict: 'REVIEW_REQUIRED',
+    explanation: 'The policy engine flags a conflict between the prompt and the proposed arguments.',
   },
 ];

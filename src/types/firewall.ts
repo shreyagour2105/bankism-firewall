@@ -17,7 +17,8 @@ export type ThreatCategory =
   | 'DATA_EXFILTRATION'
   | 'AMBIGUOUS_REQUEST'
   | 'INVALID_TRANSACTION'
-  | 'ANALYSIS_FAILURE';
+  | 'ANALYSIS_FAILURE'
+  | 'INVALID_TOOL_CALL';
 
 export type BankingIntent = 'BALANCE_INQUIRY' | 'TRANSFER' | 'TRANSACTION_HISTORY' | 'OTHER' | 'UNKNOWN';
 
@@ -38,7 +39,12 @@ export interface ExtractedParameters {
 
 export type EngineMode = 'DETERMINISTIC_RULES' | 'HYBRID_LLM_ADVISORY' | 'FAIL_CLOSED';
 
+export type BankingToolName = 'get_balance' | 'list_transactions' | 'transfer_funds';
+
 export interface FirewallVerdict {
+  request_source?: 'PROMPT' | 'TOOL_CALL';
+  tool_name?: BankingToolName;
+  simulation?: true;
   request_id: string;
   timestamp: string;
   verdict: Verdict;
@@ -58,6 +64,8 @@ export interface FirewallVerdict {
 
 export interface AnalyzeRequestPayload {
   raw_input: string;
+  tool_call?: unknown;
+  simulate?: boolean;
   recipient?: string;
   amount?: number;
   memo?: string;
@@ -72,6 +80,7 @@ export interface ExecuteTransferPayload {
   idempotency_key: string;
   // Security token or cryptographic signature representing server approval
   verdict_token: string;
+  consent_token?: string;
 }
 
 export interface MockTransaction {

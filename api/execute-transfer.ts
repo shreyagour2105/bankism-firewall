@@ -14,6 +14,7 @@ export type ApiResponse = ServerResponse;
 const MAX_PAYLOAD_BYTES = 4096;
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
+  res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -71,12 +72,24 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return;
     }
 
+    const action = body.action ?? 'execute';
+    if (action !== 'confirm' && action !== 'execute') {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'GATE_REJECTION: Unknown transfer action.' }));
+      return;
+    }
+
     const requestId = typeof body.request_id === 'string' ? body.request_id.trim() : '';
     const recipient = typeof body.recipient === 'string' ? body.recipient.trim() : '';
-    const amount = typeof body.amount === 'number' ? body.amount : Number(body.amount);
+    const amount = typeof body.amount === 'string' ? Number(body.amount) : body.amount;
     const idempotencyKey = typeof body.idempotency_key === 'string' ? body.idempotency_key.trim() : '';
     const verdictToken = typeof body.verdict_token === 'string' ? body.verdict_token.trim() : '';
-    const memo = typeof body.memo === 'string' ? body.memo.trim().slice(0, 255) : undefined;
+    const memo = typeof body.memo === 'string' ? body.memo.trim() : undefined;
+    if (body.memo !== undefined && (typeof body.memo !== 'string' || body.memo.length > 255)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: 'GATE_REJECTION: Invalid transaction memo.' }));
+      return;
+    }
 
     if (!requestId || requestId.length < 5 || requestId.length > 100) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -90,7 +103,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return;
     }
 
-    if (!Number.isFinite(amount) || isNaN(amount) || amount <= 0) {
+    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: false, error: 'GATE_REJECTION: Amount must be a positive finite number.' }));
       return;
@@ -121,9 +134,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       memo,
       idempotency_key: idempotencyKey,
       verdict_token: verdictToken,
+      consent_token: typeof body.consent_token === 'string' ? body.consent_token : undefined,
     };
 
-    const result = ledgerStore.executeTransfer(payload);
+    const result = action === 'confirm'
+      ? ledgerStore.confirmTransfer(payload, body.consent)
+      : ledgerStore.executeTransfer(payload);
 
     res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(result));

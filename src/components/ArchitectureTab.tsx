@@ -18,7 +18,7 @@ export const ArchitectureTab: React.FC = () => {
       step: '01',
       title: 'Untrusted Ingestion',
       subtitle: 'Zero-Trust Input Boundary',
-      desc: 'All natural-language prompts, payment memos, recipients, and parameters are treated as hostile external input.',
+      desc: 'Banking prompts, agent tool calls, and transfer fields enter through a single untrusted input boundary.',
       icon: <Layers className="w-5 h-5 text-cyan-400" />,
       color: 'border-cyan-500/30 bg-cyan-950/20 text-cyan-300',
     },
@@ -42,23 +42,23 @@ export const ArchitectureTab: React.FC = () => {
       step: '04',
       title: 'Optional Advisory LLM',
       subtitle: 'Untrusted Analyzer (Advisory Only)',
-      desc: 'Optional Gemini / LLM evaluates semantic nuance with strict schema validation. Has ZERO privilege to authorize.',
+      desc: 'Optional Gemini analysis can add threat signals for banking prompts. Tool calls and lab cases use deterministic rules.',
       icon: <Cpu className="w-5 h-5 text-amber-400" />,
       color: 'border-amber-500/30 bg-amber-950/20 text-amber-300',
     },
     {
       step: '05',
       title: 'Deterministic Policy Engine',
-      subtitle: 'Hardcoded Cryptographic Authority',
-      desc: 'Immutable rules enforce $1,000 transfer limits, recipient allowlist, positive finite amounts, and fail-closed arbitration.',
+      subtitle: 'Tool allowlist and transaction rules',
+      desc: 'The engine validates exact tool schemas and enforces the recipient allowlist, positive amounts, and the $1,000 demo transfer limit.',
       icon: <Lock className="w-5 h-5 text-emerald-400" />,
       color: 'border-emerald-500/30 bg-emerald-950/20 text-emerald-300',
     },
     {
       step: '06',
       title: 'Server Authorization Gate',
-      subtitle: 'Cryptographic Token & Idempotency',
-      desc: 'Transactions require a single-use server verdict token and idempotency key. Client UI cannot execute directly.',
+      subtitle: 'Explicit consent and single use',
+      desc: 'The user reviews the exact transfer. The server verifies a signed verdict and a consent grant bound to the details and idempotency key before debiting the mock ledger.',
       icon: <Database className="w-5 h-5 text-cyan-400" />,
       color: 'border-cyan-500/30 bg-cyan-950/20 text-cyan-300',
     },
@@ -99,37 +99,37 @@ export const ArchitectureTab: React.FC = () => {
       threat: 'Client-Side State Tampering',
       example: 'Altering browser JavaScript state to claim APPROVED status',
       impact: 'CRITICAL',
-      defense: 'Server-side cryptographic verdict tokens verified before ledger execution.',
+      defense: 'The ledger verifies both the signed verdict and the consent grant before execution.',
     },
     {
       threat: 'Replay / Duplicate Attack',
       example: 'Submitting identical transaction request multiple times',
       impact: 'MEDIUM',
-      defense: 'Server-side Idempotency Key cache invalidating replayed tokens.',
+      defense: 'The ledger checks idempotency keys and redeemed authorizations inside the active mock ledger process.',
     },
   ];
 
   return (
     <div className="space-y-6">
       {/* Title */}
-      <div className="p-5 rounded-xl bg-[#0f172a] border border-slate-800">
+      <div className="p-5 rounded-xl bg-[#13151c] border border-[#2a2d36]">
         <div className="flex items-center gap-2">
           <Shield className="w-5 h-5 text-cyan-400" />
-          <h2 className="text-xl font-bold font-mono text-white">Security Architecture &amp; Threat Model</h2>
+          <h1 className="text-xl font-semibold text-white">Security architecture</h1>
         </div>
         <p className="text-xs text-slate-400 mt-1">
-          Defense-in-depth architecture: Why LLMs must never hold execution authority over financial transactions.
+          How prompts and agent tool calls reach a policy decision and, with consent, the mock ledger.
         </p>
       </div>
 
       {/* Visual Pipeline Flow */}
-      <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-5 shadow-lg">
+      <div className="bg-[#13151c] border border-[#2a2d36] rounded-xl p-5 ">
         <h3 className="text-sm font-semibold font-mono text-slate-200 mb-1 flex items-center gap-2">
           <Layers className="w-4 h-4 text-cyan-400" />
           6-Stage Request Interception Pipeline
         </h3>
         <p className="text-xs text-slate-400 mb-6">
-          Every natural language request flows sequentially through all layers before any banking action can be considered.
+          The firewall validates requests before considering a read or a mock transfer.
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -159,7 +159,7 @@ export const ArchitectureTab: React.FC = () => {
 
       {/* Deep-Dive: Why the LLM is Untrusted */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <div className="p-5 rounded-xl bg-gradient-to-br from-rose-950/20 via-[#0f172a] to-[#0a1124] border border-rose-500/30">
+        <div className="p-5 rounded-xl bg-gradient-to-br from-rose-950/20 via-[#0f172a] to-[#151a25] border border-rose-500/30">
           <div className="flex items-center gap-2 mb-3">
             <AlertOctagon className="w-5 h-5 text-rose-400" />
             <h3 className="text-sm font-bold font-mono text-white">The Flawed Paradigm: AI as Authorizer</h3>
@@ -172,13 +172,13 @@ export const ArchitectureTab: React.FC = () => {
           </div>
         </div>
 
-        <div className="p-5 rounded-xl bg-gradient-to-br from-emerald-950/20 via-[#0f172a] to-[#0a1124] border border-emerald-500/30">
+        <div className="p-5 rounded-xl bg-gradient-to-br from-emerald-950/20 via-[#0f172a] to-[#151a25] border border-emerald-500/30">
           <div className="flex items-center gap-2 mb-3">
             <CheckCircle2 className="w-5 h-5 text-emerald-400" />
             <h3 className="text-sm font-bold font-mono text-white">The Bankism Solution: Deterministic Guardrails</h3>
           </div>
           <p className="text-xs text-slate-300 leading-relaxed space-y-2">
-            Bankism inverts this trust model: the LLM is strictly an <strong>advisory analyzer</strong>. It produces opinions on intent and tone, but possesses zero banking API access. The final decision is enforced by deterministic code that hard-checks business logic, recipient allowlists, transfer caps, and signs single-use authorization tokens.
+            Bankism inverts this trust model: the LLM is strictly an <strong>advisory analyzer</strong>. It produces opinions on intent and tone, but possesses zero banking API access. The final decision is enforced by deterministic code that hard-checks business logic, recipient allowlists, transfer caps, and signs transfer review tokens. Explicit consent unlocks execution in the mock ledger.
           </p>
           <div className="mt-4 p-3 rounded-lg bg-emerald-950/40 border border-emerald-500/20 text-xs text-emerald-300">
             <strong>Guaranteed Defense:</strong> Even if an adversary achieves 100% prompt injection control over the AI, deterministic gate rules physically block unauthorized transfers.
@@ -187,7 +187,7 @@ export const ArchitectureTab: React.FC = () => {
       </div>
 
       {/* Threat Model Matrix */}
-      <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-5 shadow-lg">
+      <div className="bg-[#13151c] border border-[#2a2d36] rounded-xl p-5 ">
         <h3 className="text-sm font-semibold font-mono text-slate-200 mb-1 flex items-center gap-2">
           <ShieldAlert className="w-4 h-4 text-cyan-400" />
           Threat Model &amp; Countermeasure Matrix
@@ -199,7 +199,7 @@ export const ArchitectureTab: React.FC = () => {
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs font-mono">
             <thead>
-              <tr className="border-b border-slate-800 text-slate-400 uppercase text-[11px]">
+              <tr className="border-b border-[#2a2d36] text-slate-400 uppercase text-[11px]">
                 <th scope="col" className="pb-2.5">Threat Category</th>
                 <th scope="col" className="pb-2.5">Attack Signature / Example</th>
                 <th scope="col" className="pb-2.5">Impact</th>
@@ -233,7 +233,7 @@ export const ArchitectureTab: React.FC = () => {
       </div>
 
       {/* Limitations Disclosure */}
-      <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 text-xs text-slate-400 space-y-1.5 font-sans leading-relaxed">
+      <div className="p-4 rounded-xl bg-slate-900/90 border border-[#2a2d36] text-xs text-slate-400 space-y-1.5 font-sans leading-relaxed">
         <h4 className="font-mono font-bold text-slate-300 text-xs uppercase flex items-center gap-1.5">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
           Prototype Scope &amp; Demonstration Limitations

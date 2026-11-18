@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Navbar } from './components/Navbar';
+import React, { useState, useEffect, useRef } from 'react';
+import { ArrowUpRight, Github, Shield } from 'lucide-react';
+import { Navbar, getPage, REPOSITORY_URL } from './components/Navbar';
+import { LandingPage } from './components/LandingPage';
 import { OverviewTab } from './components/OverviewTab';
 import { ConsoleTab } from './components/ConsoleTab';
 import { LabTab } from './components/LabTab';
@@ -13,7 +15,7 @@ import {
   ExecuteTransferPayload,
   EngineMode,
 } from './types/firewall';
-import { evaluateSecurityPolicy, CONFIG } from './security/policyEngine';
+import { createFailClosedVerdict, evaluateSecurityPolicy, CONFIG } from './security/policyEngine';
 import { INITIAL_MOCK_TRANSACTIONS } from './security/mockLedgerClient';
 
 // Seeded initial demo verdicts to make the SOC live dashboard demonstrable immediately
@@ -87,140 +89,154 @@ const INITIAL_DEMO_VERDICTS: FirewallVerdict[] = [
 ];
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('overview');
-  const [verdicts, setVerdicts] = useState<FirewallVerdict[]>(INITIAL_DEMO_VERDICTS);
+  const [page, setPage] = useState(getPage);
+  const [verdicts, setVerdicts] = useState<FirewallVerdict[]>([]);
   const [currentVerdict, setCurrentVerdict] = useState<FirewallVerdict | null>(null);
-  const [verdictToken, setVerdictToken] = useState<string | undefined>(undefined);
-  const [balance, setBalance] = useState<number>(CONFIG.DEMO_ACCOUNT_INITIAL_BALANCE);
+  const [reviewToken, setReviewToken] = useState<{ requestId: string; token: string } | null>(null);
+  const [balance, setBalance] = useState(CONFIG.DEMO_ACCOUNT_INITIAL_BALANCE);
   const [transactions, setTransactions] = useState<MockTransaction[]>(INITIAL_MOCK_TRANSACTIONS);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionResult, setExecutionResult] = useState<{
-    success: boolean;
-    message: string;
-    txId?: string;
+    requestId: string; success: boolean; message: string; txId?: string;
   } | null>(null);
   const [engineMode, setEngineMode] = useState<EngineMode>('DETERMINISTIC_RULES');
+  const [draft, setDraft] = useState<{ payload: AnalyzeRequestPayload; version: number }>();
+  const analysisVersion = useRef(0);
+  const executionPending = useRef(false);
+  const ledgerVersion = useRef(0);
 
-  // Sync initial ledger on mount
   useEffect(() => {
+    const handleHashChange = () => {
+      const next = getPage();
+      setPage(next);
+      const anchor = window.location.hash.slice(1);
+      if (next !== 'home' || !anchor) window.scrollTo(0, 0);
+      else requestAnimationFrame(() => document.getElementById(anchor)?.scrollIntoView());
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  useEffect(() => {
+    const version = ledgerVersion.current;
     fetch('/api/ledger')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data) {
+        if (data && ledgerVersion.current === version) {
           setBalance(data.balance);
           setTransactions(data.transactions);
         }
       })
-      .catch(() => {
-        // Fallback to local demo default ledger
-        setBalance(CONFIG.DEMO_ACCOUNT_INITIAL_BALANCE);
-        setTransactions(INITIAL_MOCK_TRANSACTIONS);
-      });
+      .catch(() => { /* Keep the local seed ledger when the server is unavailable. */ });
   }, []);
 
-  // Analyze request handler
-  const handleAnalyze = async (payload: AnalyzeRequestPayload) => {
-    setIsAnalyzing(true);
-    setExecutionResult(null);
+  async function handleAnalyze(payload: AnalyzeRequestPayload, simulation = false) {
+    const version = simulation ? undefined : ++analysisVersion.current;
+    if (!simulation) {
+      setIsAnalyzing(true);
+      setCurrentVerdict(null);
+      setReviewToken(null);
+      setExecutionResult(null);
+    }
 
+    let verdict: FirewallVerdict;
+    let token: string | undefined;
     try {
-      // Call serverless API endpoint
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, simulate: simulation }),
       });
-
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      const newVerdict: FirewallVerdict = data.verdict;
-      const token: string | undefined = data.verdict_token;
-
-      setCurrentVerdict(newVerdict);
-      setVerdictToken(token);
-      setVerdicts((prev) => [newVerdict, ...prev]);
-      if (newVerdict.engine_mode) {
-        setEngineMode(newVerdict.engine_mode);
-      }
-
-      return { verdict: newVerdict, verdictToken: token };
+      if (!data.verdict?.request_id) throw new Error('Invalid analysis response');
+      verdict = data.verdict;
+      token = data.verdict_token;
     } catch {
-      // Reliable fallback: evaluate locally using deterministic policy engine
-      // Offline fallback: evaluate locally using deterministic policy engine for UI preview only
-      const fallbackVerdict = evaluateSecurityPolicy(payload);
-      setCurrentVerdict(fallbackVerdict);
-      setVerdictToken(undefined);
-      setVerdicts((prev) => [fallbackVerdict, ...prev]);
-      return { verdict: fallbackVerdict, verdictToken: undefined };
-    } finally {
+      verdict = simulation ? createFailClosedVerdict('Simulation could not reach the analysis API') : evaluateSecurityPolicy(payload);
+    }
+
+    if (simulation) verdict = { ...verdict, simulation: true };
+    setVerdicts((previous) => [verdict, ...previous]);
+    if (version !== undefined && version === analysisVersion.current) {
+      setCurrentVerdict(verdict);
+      setReviewToken(token ? { requestId: verdict.request_id, token } : null);
+      setEngineMode(verdict.engine_mode);
       setIsAnalyzing(false);
     }
-  };
+    return { verdict, verdictToken: token };
+  }
 
-  // Execute transfer handler via server authorization gate (strictly fail-closed)
-  const handleExecuteTransfer = async (verdict: FirewallVerdict, token: string) => {
-    if (!verdict.extracted_parameters?.recipient || !verdict.extracted_parameters?.amount) {
-      return;
-    }
+  function recordTransaction(transaction: MockTransaction, updatedBalance: number) {
+    ledgerVersion.current++;
+    setBalance(updatedBalance);
+    setTransactions((previous) => [transaction, ...previous.filter((entry) => entry.id !== transaction.id)]);
+    const markExecuted = (verdict: FirewallVerdict) => verdict.request_id === transaction.request_id
+      ? { ...verdict, transaction_executed: true }
+      : verdict;
+    setVerdicts((previous) => previous.map(markExecuted));
+    setCurrentVerdict((previous) => previous && markExecuted(previous));
+  }
 
+  async function handleExecuteTransfer(verdict: FirewallVerdict, token: string) {
+    const { request_id, extracted_parameters } = verdict;
+    if (executionPending.current || !extracted_parameters?.recipient ||
+        extracted_parameters.amount === undefined || reviewToken?.requestId !== request_id ||
+        reviewToken.token !== token) return;
+
+    executionPending.current = true;
     setIsExecuting(true);
-    const idempotencyKey = `idem_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-
+    setExecutionResult(null);
     const payload: ExecuteTransferPayload = {
-      request_id: verdict.request_id,
-      recipient: verdict.extracted_parameters.recipient,
-      amount: verdict.extracted_parameters.amount,
-      memo: verdict.extracted_parameters.memo,
-      idempotency_key: idempotencyKey,
+      request_id,
+      recipient: extracted_parameters.recipient,
+      amount: extracted_parameters.amount,
+      memo: extracted_parameters.memo,
+      idempotency_key: `idem_${request_id}`,
       verdict_token: token,
     };
-
-    try {
-      const res = await fetch('/api/execute-transfer', {
+    const submit = async (body: object) => {
+      const response = await fetch('/api/execute-transfer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(body),
       });
-
-      const data = await res.json().catch(() => null);
-
-      if (res.ok && data?.success && data?.transaction) {
-        setBalance(data.updated_balance);
-        setTransactions((prev) => [data.transaction, ...prev]);
-        setExecutionResult({
-          success: true,
-          message: `Transfer of $${data.transaction.amount} to ${data.transaction.recipient} authorized and executed!`,
-          txId: data.transaction.id,
-        });
-      } else {
-        setExecutionResult({
-          success: false,
-          message: data?.error || `Transaction gate rejected the request (HTTP ${res.status}).`,
-        });
+      return response.json();
+    };
+    try {
+      const confirmed = await submit({ ...payload, action: 'confirm', consent: true });
+      if (!confirmed.success || typeof confirmed.consent_token !== 'string') {
+        throw new Error(confirmed.error || 'The server could not confirm this transfer.');
       }
-    } catch {
-      // Fail closed: Do NOT execute in browser memory when server gate is unreachable
+
+      const data = await submit({ ...payload, consent_token: confirmed.consent_token });
+      const alreadyExecuted = data.error?.startsWith('DUPLICATE_REJECTED');
+      if ((!data.success && !alreadyExecuted) || data.transaction?.request_id !== request_id) {
+        throw new Error(data.error || 'The transaction gate rejected this transfer.');
+      }
+
+      recordTransaction(data.transaction, data.updated_balance);
       setExecutionResult({
-        success: false,
-        message: 'Security Gate Error: Server authorization gate is unreachable. Client-side execution fallback is disabled for security (fail-closed).',
+        requestId: request_id,
+        success: true,
+        message: `Mock transfer of $${data.transaction.amount} to ${data.transaction.recipient} recorded.`,
+        txId: data.transaction.id,
+      });
+    } catch (error) {
+      setExecutionResult({
+        requestId: request_id, success: false,
+        message: error instanceof Error ? error.message : 'The transaction gate could not complete this transfer.',
       });
     } finally {
+      executionPending.current = false;
       setIsExecuting(false);
     }
-  };
+  }
 
-  // Raw transfer execution for sandbox testing (strictly server-side, fail-closed)
-  const handleExecuteRawTransfer = async (rawPayload: {
-    recipient: string;
-    amount: number;
-    memo?: string;
-    verdict_token?: string;
-    idempotency_key?: string;
-  }) => {
+  async function handleExecuteRawTransfer(rawPayload: {
+    recipient: string; amount: number; memo?: string; verdict_token?: string; idempotency_key?: string;
+  }) {
     const payload: ExecuteTransferPayload = {
       request_id: `req_raw_${Date.now()}`,
       recipient: rawPayload.recipient,
@@ -229,31 +245,23 @@ export const App: React.FC = () => {
       idempotency_key: rawPayload.idempotency_key || `idem_raw_${Date.now()}`,
       verdict_token: rawPayload.verdict_token || '',
     };
-
     try {
       const res = await fetch('/api/execute-transfer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-
       const data = await res.json().catch(() => null);
-      if (res.ok && data?.success && data?.transaction) {
-        setBalance(data.updated_balance);
-        setTransactions((prev) => [data.transaction, ...prev]);
-        return data;
-      }
+      if (res.ok && data?.success && data.transaction) recordTransaction(data.transaction, data.updated_balance);
       return data || { success: false, error: `Server returned HTTP ${res.status}` };
     } catch {
-      return {
-        success: false,
-        error: 'Security Gate Error: Server authorization gate unreachable. Client-side execution fallback is disabled (fail-closed).',
-      };
+      return { success: false, error: 'The transaction gate is unreachable. Execution was not authorized.' };
     }
-  };
+  }
 
-  // Reset sandbox ledger (passes through serverless API with authorization)
-  const handleResetLedger = async () => {
+  async function handleResetLedger() {
+    if (executionPending.current) return;
+    const version = ledgerVersion.current;
     try {
       const res = await fetch('/api/ledger', {
         method: 'POST',
@@ -261,97 +269,76 @@ export const App: React.FC = () => {
         body: JSON.stringify({ action: 'reset' }),
       });
       const data = await res.json().catch(() => null);
-      if (res.ok && data) {
+      if (res.ok && data && version === ledgerVersion.current) {
+        ledgerVersion.current++;
         setBalance(data.balance);
         setTransactions(data.transactions);
+        setReviewToken(null);
       } else if (data?.error) {
-        alert(`Ledger Reset: ${data.error}`);
+        alert(`Ledger reset: ${data.error}`);
       }
     } catch {
-      // Offline fallback for local sandbox development
-      setBalance(CONFIG.DEMO_ACCOUNT_INITIAL_BALANCE);
-      setTransactions(INITIAL_MOCK_TRANSACTIONS);
+      alert('The server could not reset the mock ledger.');
     }
-  };
+  }
+
+  function selectVerdict(verdict: FirewallVerdict) {
+    analysisVersion.current++;
+    setIsAnalyzing(false);
+    setCurrentVerdict(verdict);
+    setReviewToken(null);
+    window.location.hash = 'console';
+  }
+
+  function loadInConsole(payload: AnalyzeRequestPayload) {
+    analysisVersion.current++;
+    setIsAnalyzing(false);
+    setReviewToken(null);
+    setCurrentVerdict(null);
+    setDraft((previous) => ({ payload, version: (previous?.version ?? 0) + 1 }));
+    window.location.hash = 'console';
+  }
 
   return (
-    <div className="min-h-screen bg-[#080d1a] text-slate-100 flex flex-col font-sans selection:bg-cyan-500/20 selection:text-cyan-200">
-      {/* Top Navbar */}
-      <Navbar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        engineMode={engineMode}
-        totalRequests={verdicts.length}
-      />
-
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div
-          role="tabpanel"
-          id={`tabpanel-${activeTab}`}
-          aria-labelledby={`tab-${activeTab}`}
-        >
-          {activeTab === 'overview' && (
-            <OverviewTab
-              verdicts={verdicts}
-              transactions={transactions}
-              balance={balance}
-              onSelectVerdict={(v) => {
-                setCurrentVerdict(v);
-                setActiveTab('console');
-              }}
-              onNavigateToConsole={() => setActiveTab('console')}
-            />
-          )}
-
-          {activeTab === 'console' && (
-            <ConsoleTab
-              onAnalyze={handleAnalyze}
-              onExecuteTransfer={handleExecuteTransfer}
-              verdict={currentVerdict}
-              verdictToken={verdictToken}
-              isAnalyzing={isAnalyzing}
-              isExecuting={isExecuting}
-              executionResult={executionResult}
-            />
-          )}
-
-          {activeTab === 'lab' && (
-            <LabTab
-              onAnalyze={handleAnalyze}
-              onSelectVerdict={(v) => {
-                setCurrentVerdict(v);
-                setActiveTab('console');
-              }}
-              onNavigateToConsole={(payload) => {
-                handleAnalyze(payload);
-                setActiveTab('console');
-              }}
-            />
-          )}
-
-          {activeTab === 'sandbox' && (
-            <SandboxTab
-              balance={balance}
-              transactions={transactions}
-              onResetLedger={handleResetLedger}
-              onExecuteRawTransfer={handleExecuteRawTransfer}
-            />
-          )}
-
-          {activeTab === 'architecture' && <ArchitectureTab />}
-
-          {activeTab === 'docs' && <DocsTab />}
-        </div>
-      </main>
-
-      {/* SOC Footer */}
-      <footer className="border-t border-slate-800/80 bg-[#090f1f] py-4 text-center text-xs text-slate-500 font-mono">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>BANKISM AI Security Firewall • Defense-in-Depth Prototype</span>
-          <span className="text-slate-400">
-            Fail-Closed Enforcement • Pure Mock Sandbox (Zero Live Banking APIs)
-          </span>
+    <div className="app-shell">
+      <a className="skip-link" href={page === 'home' ? '#home-main' : '#workspace-main'}
+        onClick={(event) => {
+          event.preventDefault();
+          document.getElementById(page === 'home' ? 'home-main' : 'workspace-main')?.focus();
+        }}>Skip to content</a>
+      <Navbar page={page} />
+      {page === 'home' ? <LandingPage /> : (
+        <main className="workspace-main wrap" tabIndex={-1} id="workspace-main">
+          {page === 'dashboard' && <OverviewTab
+            verdicts={verdicts.length ? verdicts : [...INITIAL_DEMO_VERDICTS].reverse()}
+            showingSamples={!verdicts.length} transactions={transactions}
+            balance={balance} engineMode={engineMode} onSelectVerdict={selectVerdict} />}
+          {page === 'console' && <ConsoleTab
+            key={draft?.version}
+            initialPayload={draft?.payload}
+            onAnalyze={handleAnalyze}
+            onExecuteTransfer={handleExecuteTransfer}
+            verdict={currentVerdict}
+            verdictToken={reviewToken?.requestId === currentVerdict?.request_id ? reviewToken?.token : undefined}
+            isAnalyzing={isAnalyzing}
+            isExecuting={isExecuting}
+            executionResult={executionResult?.requestId === currentVerdict?.request_id ? executionResult : null} />}
+          {page === 'lab' && <LabTab
+            onAnalyze={(payload) => handleAnalyze(payload, true)}
+            onSelectVerdict={selectVerdict}
+            onNavigateToConsole={loadInConsole} />}
+          {page === 'sandbox' && <SandboxTab
+            balance={balance} transactions={transactions} resetDisabled={isExecuting}
+            onResetLedger={handleResetLedger} onExecuteRawTransfer={handleExecuteRawTransfer} />}
+          {page === 'architecture' && <ArchitectureTab />}
+          {page === 'docs' && <DocsTab />}
+        </main>
+      )}
+      <footer className="site-footer">
+        <div className="wrap site-footer-inner">
+          <a className="wordmark" href="#home"><Shield size={19} aria-hidden="true" /> Bankism Firewall</a>
+          <span>AI security prototype</span>
+          <a className="footer-source" href={REPOSITORY_URL}><Github size={16} aria-hidden="true" /> GitHub <ArrowUpRight size={13} aria-hidden="true" /></a>
         </div>
       </footer>
     </div>

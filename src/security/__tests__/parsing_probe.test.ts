@@ -463,24 +463,21 @@ describe('Issue 8 — Duplicate execution prevented (idempotency)', () => {
     const token = ledgerStore.registerApprovedVerdict(v);
     const idemKey = `idem_dup_test_${Date.now()}`;
 
-    const first = ledgerStore.executeTransfer({
+    const payload = {
       request_id: v.request_id,
       recipient: 'alice.eth',
       amount: 100,
       idempotency_key: idemKey,
       verdict_token: token,
-    });
+    };
+    const confirmation = ledgerStore.confirmTransfer(payload, true);
+    if (!confirmation.success) throw new Error(confirmation.error);
+    const transfer = { ...payload, consent_token: confirmation.consent_token };
+    const first = ledgerStore.executeTransfer(transfer);
     expect(first.success).toBe(true);
     expect(ledgerStore.getBalance()).toBe(4900);
 
-    // Second attempt with the same idempotency key
-    const second = ledgerStore.executeTransfer({
-      request_id: v.request_id,
-      recipient: 'alice.eth',
-      amount: 100,
-      idempotency_key: idemKey,
-      verdict_token: token,
-    });
+    const second = ledgerStore.executeTransfer(transfer);
     expect(second.success).toBe(false);
     expect(second.error).toContain('DUPLICATE_REJECTED');
     // Balance must NOT be double-deducted
@@ -495,14 +492,16 @@ describe('Issue 8 — Duplicate execution prevented (idempotency)', () => {
     });
     const token = ledgerStore.registerApprovedVerdict(v);
 
-    // First execution — succeeds
-    const first = ledgerStore.executeTransfer({
+    const payload = {
       request_id: v.request_id,
       recipient: 'alice.eth',
       amount: 100,
       idempotency_key: `idem_first_${Date.now()}`,
       verdict_token: token,
-    });
+    };
+    const confirmation = ledgerStore.confirmTransfer(payload, true);
+    if (!confirmation.success) throw new Error(confirmation.error);
+    const first = ledgerStore.executeTransfer({ ...payload, consent_token: confirmation.consent_token });
     expect(first.success).toBe(true);
 
     // Replay with a fresh idempotency key but same token/request_id
@@ -519,7 +518,7 @@ describe('Issue 8 — Duplicate execution prevented (idempotency)', () => {
     expect(ledgerStore.getBalance()).toBe(4900);
   });
 
-  it('Ledger resetLedger clears idempotency state correctly', () => {
+  it('Reset restores balances while redeemed authorizations remain single-use', () => {
     const v = evaluateSecurityPolicy({
       raw_input: 'Transfer $100 to alice.eth',
       recipient: 'alice.eth',
@@ -528,16 +527,20 @@ describe('Issue 8 — Duplicate execution prevented (idempotency)', () => {
     const token = ledgerStore.registerApprovedVerdict(v);
     const idemKey = `idem_reset_test_${Date.now()}`;
 
-    ledgerStore.executeTransfer({
+    const payload = {
       request_id: v.request_id,
       recipient: 'alice.eth',
       amount: 100,
       idempotency_key: idemKey,
       verdict_token: token,
-    });
+    };
+    const confirmation = ledgerStore.confirmTransfer(payload, true);
+    if (!confirmation.success) throw new Error(confirmation.error);
+    const transfer = { ...payload, consent_token: confirmation.consent_token };
+    expect(ledgerStore.executeTransfer(transfer).success).toBe(true);
 
-    // After reset, state is cleared — a fresh transaction can proceed
     ledgerStore.resetLedger();
+    expect(ledgerStore.executeTransfer(transfer).error).toContain('REPLAY_REJECTED');
     expect(ledgerStore.getBalance()).toBe(5000);
   });
 });

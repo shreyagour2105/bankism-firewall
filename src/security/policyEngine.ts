@@ -12,9 +12,12 @@ import {
   PolicyChecks,
   AnalyzeRequestPayload,
   EngineMode,
+  BankingIntent,
+  BankingToolName,
+  ExtractedParameters,
 } from '../types/firewall';
 import { normaliseInput } from './normalizer';
-import { scanForThreats, DEMO_RECIPIENTS } from './threatScanner';
+import { extractIntentAndParams, scanForThreats, DEMO_RECIPIENTS } from './threatScanner';
 
 export const CONFIG = {
   MAX_SINGLE_TRANSFER_USD: 1000.0,
@@ -22,6 +25,42 @@ export const CONFIG = {
   DEMO_ACCOUNT_OWNER: 'usr_sarah_connor_808',
   FAIL_CLOSED_TIMEOUT_MS: 3000,
 };
+
+const TOOL_POLICIES = {
+  get_balance: { intent: 'BALANCE_INQUIRY', input: 'Check my balance' },
+  list_transactions: { intent: 'TRANSACTION_HISTORY', input: 'Show my transaction history' },
+  transfer_funds: { intent: 'TRANSFER', input: 'Transfer' },
+} as const satisfies Record<BankingToolName, { intent: BankingIntent; input: string }>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && Object.getPrototypeOf(value) === Object.prototype;
+}
+
+function parseToolCall(call: unknown): { name: BankingToolName; parameters: ExtractedParameters } | undefined {
+  if (!isRecord(call) || Object.keys(call).length !== 2 || !Object.hasOwn(call, 'name') ||
+      !Object.hasOwn(call, 'arguments') || typeof call.name !== 'string' ||
+      !Object.hasOwn(TOOL_POLICIES, call.name) || !isRecord(call.arguments)) {
+    return undefined;
+  }
+
+  const name = call.name as BankingToolName;
+  const args = call.arguments;
+  if (name !== 'transfer_funds') {
+    return Object.keys(args).length === 0 ? { name, parameters: {} } : undefined;
+  }
+
+  const { recipient, amount, memo } = args;
+  if (!Object.hasOwn(args, 'recipient') || !Object.hasOwn(args, 'amount') ||
+      Object.keys(args).some((key) => !['recipient', 'amount', 'memo'].includes(key)) ||
+      typeof recipient !== 'string' || !recipient.trim() || recipient.length > 100 ||
+      typeof amount !== 'number' || !Number.isFinite(amount) ||
+      Number(amount.toFixed(2)) !== amount ||
+      (memo !== undefined && (typeof memo !== 'string' || memo.length > 255))) {
+    return undefined;
+  }
+
+  return { name, parameters: { recipient: recipient.trim(), amount, memo: memo?.trim() } };
+}
 
 /**
  * Generate a unique cryptographic-like request ID
@@ -47,22 +86,39 @@ export function evaluateSecurityPolicy(
 ): FirewallVerdict {
   const startTime = Date.now();
   const requestId = generateRequestId();
-  const rawInput = payload.raw_input || '';
+  const isToolCall = payload.tool_call !== undefined;
+  const tool = isToolCall ? parseToolCall(payload.tool_call) : undefined;
+  const context = payload.raw_input?.trim() || '';
+  if (isToolCall && (!tool || payload.recipient !== undefined ||
+      payload.amount !== undefined || payload.memo !== undefined)) {
+    const blocked = createFailClosedVerdict('Invalid tool name, arguments, or mixed request fields');
+    return {
+      ...blocked,
+      request_source: 'TOOL_CALL',
+      threat_category: ['INVALID_TOOL_CALL'],
+      rationale: 'BLOCKED: Supply one allowlisted tool call with exactly its documented arguments.',
+      engine_mode: 'DETERMINISTIC_RULES',
+    };
+  }
+
+  const toolPolicy = tool ? TOOL_POLICIES[tool.name] : undefined;
+  const rawInput = context || toolPolicy?.input || '';
 
   // 1. Input Normalisation Check
   const norm = normaliseInput(rawInput);
   const inputNormalised = true;
 
   // 2. Threat & Intent Scanning
-  const threatResult = scanForThreats(norm, {
-    recipient: payload.recipient,
-    amount: payload.amount,
-    memo: payload.memo,
-  });
+  const threatResult = scanForThreats(norm, tool?.parameters ?? payload);
 
   const threats = new Set<ThreatCategory>(threatResult.threats);
   let riskLevel: RiskLevel = threatResult.risk_level;
   const rationaleParts: string[] = [];
+
+  if (toolPolicy && context && extractIntentAndParams(context).intent !== toolPolicy.intent) {
+    threats.add('AMBIGUOUS_REQUEST');
+    rationaleParts.push('The supplied banking request does not match the proposed tool intent.');
+  }
 
   // Include specific detected ambiguity / conflict patterns in rationale
   for (const pat of threatResult.detected_patterns) {
@@ -91,8 +147,8 @@ export function evaluateSecurityPolicy(
     amount_valid: false,
   };
 
-  const intent = threatResult.intent;
-  const extracted = threatResult.extracted_params;
+  const intent = toolPolicy?.intent ?? threatResult.intent;
+  const extracted = tool?.parameters ?? threatResult.extracted_params;
   const amount = extracted.amount;
   const recipient = extracted.recipient;
 
@@ -257,6 +313,8 @@ export function evaluateSecurityPolicy(
 
   return {
     request_id: requestId,
+    request_source: tool ? 'TOOL_CALL' : 'PROMPT',
+    tool_name: tool?.name,
     timestamp: new Date().toISOString(),
     verdict,
     risk_level: riskLevel,

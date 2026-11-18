@@ -14,6 +14,11 @@ export type ApiResponse = ServerResponse;
 
 // Max allowed payload size in bytes (4KB)
 const MAX_PAYLOAD_BYTES = 4096;
+const ADVISORY_THREATS: ThreatCategory[] = [
+  'PROMPT_INJECTION', 'JAILBREAK', 'POLICY_OVERRIDE', 'MALICIOUS_MEMO',
+  'OBFUSCATION', 'DATA_EXFILTRATION', 'AMBIGUOUS_REQUEST', 'NONE',
+];
+const ADVISORY_RISKS: RiskLevel[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 
 async function callAdvisoryGemini(promptText: string, apiKey: string): Promise<{
   suggested_risk?: RiskLevel;
@@ -35,20 +40,14 @@ Output ONLY a JSON object with this exact shape:
       headers: { 'Content-Type': 'application/json' },
       signal: controller.signal,
       body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: `${systemInstruction}\n\nUser banking request to analyze:\n"${promptText}"` }],
-          },
-        ],
+        systemInstruction: { parts: [{ text: systemInstruction }] },
+        contents: [{ role: 'user', parts: [{ text: promptText }] }],
         generationConfig: {
           temperature: 0.0,
           responseMimeType: 'application/json',
         },
       }),
     });
-
-    clearTimeout(timeoutId);
 
     if (!res.ok) {
       return null;
@@ -59,19 +58,24 @@ Output ONLY a JSON object with this exact shape:
     if (!rawContent) return null;
 
     const parsed = JSON.parse(rawContent);
+    if (!parsed || !Array.isArray(parsed.threats) || parsed.threats.length > ADVISORY_THREATS.length ||
+        !parsed.threats.every((threat: ThreatCategory) => ADVISORY_THREATS.includes(threat)) ||
+        !ADVISORY_RISKS.includes(parsed.risk) || typeof parsed.notes !== 'string') return null;
     return {
       suggested_risk: parsed.risk,
       suggested_threats: parsed.threats,
       notes: parsed.notes,
     };
   } catch {
-    clearTimeout(timeoutId);
     return null;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   // CORS & Methods
+  res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -158,8 +162,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       memo = body.memo.trim();
     }
 
+    if (body.simulate !== undefined && typeof body.simulate !== 'boolean') {
+      throw new Error('INVALID_SIMULATION_FLAG');
+    }
+
     const payload: AnalyzeRequestPayload = {
       raw_input: rawInput,
+      tool_call: body.tool_call,
       recipient,
       amount,
       memo,
@@ -167,7 +176,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     };
 
     // If input is empty, return clear validation verdict
-    if (!payload.raw_input.trim()) {
+    if (!payload.raw_input && payload.tool_call === undefined) {
       const emptyVerdict = evaluateSecurityPolicy(payload);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ verdict: emptyVerdict }));
@@ -179,7 +188,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     let advisoryData = null;
     let engineMode: 'DETERMINISTIC_RULES' | 'HYBRID_LLM_ADVISORY' = 'DETERMINISTIC_RULES';
 
-    if (geminiApiKey) {
+    if (geminiApiKey && !body.simulate && payload.tool_call === undefined) {
       advisoryData = await callAdvisoryGemini(payload.raw_input, geminiApiKey);
       if (advisoryData) {
         engineMode = 'HYBRID_LLM_ADVISORY';
@@ -191,7 +200,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     // If verdict is approved transfer, mint cryptographic server authorization token
     let verdictToken: string | undefined = undefined;
-    if (verdict.verdict === 'APPROVED' && verdict.intent === 'TRANSFER') {
+    if (!body.simulate && verdict.verdict === 'APPROVED' && verdict.intent === 'TRANSFER') {
       verdictToken = ledgerStore.registerApprovedVerdict(verdict);
     }
 
