@@ -5,7 +5,7 @@
  */
 
 import { ThreatCategory, RiskLevel, BankingIntent, ExtractedParameters } from '../types/firewall';
-import { NormalizationResult } from './normalizer';
+import { normaliseInput, NormalizationResult } from './normalizer';
 
 export interface ThreatScanResult {
   threats: ThreatCategory[];
@@ -124,9 +124,10 @@ function inspectQuotedContext(raw: string): { isQuoted: boolean; benignOuterInte
 
   // Remove the quotes and see if the outer request is asking a harmless question
   const outerText = raw.replace(quoteRegex, '').toLowerCase();
+  const outerIntent = extractIntentAndParams(outerText).intent;
   const isOuterHarmless =
-    /\b(check|what\s+is|show|view|tell\s+me)\s+(?:my\s+)?(?:current\s+|available\s+)?(balance|funds|account)\b/i.test(outerText) ||
-    /\b(reported|ticket|customer|client|user|inquiry|feedback|log|query|email|said|notes?)\b/i.test(outerText);
+    (outerIntent === 'BALANCE_INQUIRY' || outerIntent === 'TRANSACTION_HISTORY') &&
+    !PROMPT_INJECTION_PATTERNS.some((pattern) => pattern.test(normaliseInput(outerText).deobfuscated_for_analysis));
 
   return {
     isQuoted: true,
@@ -386,7 +387,8 @@ export function scanForThreats(
   const quotedContext = inspectQuotedContext(rawOriginal);
   let isQuotedSuspicious = false;
 
-  if (quotedContext.isQuoted && quotedContext.benignOuterIntent) {
+  if (quotedContext.isQuoted && quotedContext.benignOuterIntent &&
+      explicitParams?.recipient === undefined && explicitParams?.amount === undefined) {
     isQuotedSuspicious = true;
     notes.push('Suspicious phrase is safely enclosed in quotation marks inside a benign meta-inquiry.');
     // Do not automatically mark CRITICAL prompt injection if it is purely quoted in a harmless inquiry
@@ -434,7 +436,8 @@ export function scanForThreats(
   }
 
   // 6. Data Exfiltration Scan (Check prompt text, deobfuscated input, and memo)
-  const textAndMemoToCheck = [deobfuscated, explicitParams?.memo].filter(Boolean).join(' ');
+  const memo = explicitParams?.memo ? normaliseInput(explicitParams.memo).deobfuscated_for_analysis : '';
+  const textAndMemoToCheck = [deobfuscated, memo].filter(Boolean).join(' ');
   for (const pattern of DATA_EXFILTRATION_PATTERNS) {
     if (pattern.test(textAndMemoToCheck)) {
       threats.push('DATA_EXFILTRATION');
@@ -445,7 +448,7 @@ export function scanForThreats(
   }
 
   // 7. Memo Inspection (Check both input text and explicit memo field)
-  const memoToCheck = [explicitParams?.memo, deobfuscated].filter(Boolean).join(' ');
+  const memoToCheck = [memo, deobfuscated].filter(Boolean).join(' ');
   let memoThreatFound = false;
 
   for (const sqli of SQLI_PATTERNS) {
@@ -456,14 +459,10 @@ export function scanForThreats(
     }
   }
 
-  if (explicitParams?.memo) {
-    for (const memoInj of MEMO_INJECTION_PATTERNS) {
-      if (memoInj.test(explicitParams.memo)) {
-        memoThreatFound = true;
-        detectedPatterns.push(`Embedded unauthorized transaction instruction in memo.`);
-        break;
-      }
-    }
+  if (memo && [...MEMO_INJECTION_PATTERNS, ...PROMPT_INJECTION_PATTERNS,
+      ...JAILBREAK_PATTERNS, ...POLICY_OVERRIDE_PATTERNS].some((pattern) => pattern.test(memo))) {
+    memoThreatFound = true;
+    detectedPatterns.push('Embedded unauthorized instruction in memo.');
   }
 
   if (memoThreatFound) {

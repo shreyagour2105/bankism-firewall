@@ -12,6 +12,7 @@ interface SandboxTabProps {
   balance: number;
   transactions: MockTransaction[];
   onResetLedger: () => void;
+  resetDisabled?: boolean;
   onExecuteRawTransfer: (payload: {
     recipient: string;
     amount: number;
@@ -33,10 +34,11 @@ export const SandboxTab: React.FC<SandboxTabProps> = ({
   balance,
   transactions,
   onResetLedger,
+  resetDisabled,
   onExecuteRawTransfer,
 }) => {
   const [selectedRecipient, setSelectedRecipient] = useState('alice.eth');
-  const [amount] = useState('100.00');
+  const amount = 100;
   const [demoMessage, setDemoMessage] = useState<{ text: string; isError: boolean } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -47,7 +49,7 @@ export const SandboxTab: React.FC<SandboxTabProps> = ({
     try {
       const res = await onExecuteRawTransfer({
         recipient: selectedRecipient,
-        amount: parseFloat(amount) || 500,
+        amount,
         memo: 'Adversary attempting direct execution without firewall token',
         verdict_token: 'forged_fake_token_attempt_bypass',
         idempotency_key: `idem_tamper_${Date.now()}`,
@@ -86,12 +88,10 @@ export const SandboxTab: React.FC<SandboxTabProps> = ({
         verdict_token: 'forged_token',
       });
 
-      if (!res.success) {
-        setDemoMessage({
-          text: `IDEMPOTENCY DUPLICATE PREVENTION VERIFIED: ${res.error}. Duplicate transaction was blocked.`,
-          isError: true,
-        });
-      }
+      setDemoMessage({
+        text: res.success ? 'Unexpected success' : `Duplicate-key request rejected. ${res.error}`,
+        isError: res.success,
+      });
     } catch (err: any) {
       setDemoMessage({ text: `Replay Blocked: ${err.message}`, isError: true });
     } finally {
@@ -102,19 +102,20 @@ export const SandboxTab: React.FC<SandboxTabProps> = ({
   return (
     <div className="space-y-6">
       {/* Title & Sandbox Notice */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-xl bg-[#0f172a] border border-slate-800">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-xl bg-[#13151c] border border-[#2a2d36]">
         <div>
           <div className="flex items-center gap-2">
             <Lock className="w-5 h-5 text-emerald-400" />
-            <h2 className="text-xl font-bold font-mono text-white">Mock Banking Sandbox &amp; Ledger</h2>
+            <h1 className="text-xl font-semibold text-white">Mock banking ledger</h1>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Simulated banking environment. Privileged ledger actions require server-side cryptographic approval.
+            Simulated banking environment. Transfers require policy approval and a signed consent grant.
           </p>
         </div>
 
         <button
           onClick={onResetLedger}
+          disabled={resetDisabled}
           aria-label="Reset Demo Sandbox"
           className="self-start sm:self-auto px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-xs flex items-center gap-1.5 transition-colors"
         >
@@ -125,7 +126,7 @@ export const SandboxTab: React.FC<SandboxTabProps> = ({
 
       {/* Account Balance Card */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <div className="md:col-span-2 p-6 rounded-xl bg-gradient-to-br from-[#0e1e38] via-[#0f172a] to-[#0a1124] border border-cyan-500/30 shadow-xl relative overflow-hidden">
+        <div className="md:col-span-2 p-6 rounded-xl bg-gradient-to-br from-[#192336] via-[#0f172a] to-[#151a25] border border-cyan-500/30  relative overflow-hidden">
           <div className="relative z-10 flex flex-col justify-between h-full">
             <div>
               <div className="flex items-center justify-between">
@@ -144,7 +145,7 @@ export const SandboxTab: React.FC<SandboxTabProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 mt-6 pt-4 border-t border-slate-800/80 text-xs font-mono">
+            <div className="grid grid-cols-3 gap-2 mt-6 pt-4 border-t border-[#2a2d36]/80 text-xs font-mono">
               <div>
                 <span className="text-slate-400 block text-[10px]">DAILY LIMIT</span>
                 <span className="text-slate-300">$5,000.00</span>
@@ -162,7 +163,7 @@ export const SandboxTab: React.FC<SandboxTabProps> = ({
         </div>
 
         {/* Security Demonstration Tools */}
-        <div className="p-5 rounded-xl bg-[#0f172a] border border-slate-800 flex flex-col justify-between space-y-4">
+        <div className="p-5 rounded-xl bg-[#13151c] border border-[#2a2d36] flex flex-col justify-between space-y-4">
           <div>
             <h3 className="text-xs font-mono font-bold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
               <ShieldAlert className="w-4 h-4 text-cyan-400" />
@@ -211,7 +212,7 @@ export const SandboxTab: React.FC<SandboxTabProps> = ({
       )}
 
       {/* Verified Demo Recipients Directory */}
-      <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-5">
+      <div className="bg-[#13151c] border border-[#2a2d36] rounded-xl p-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold font-mono text-slate-200 flex items-center gap-2">
             <Users className="w-4 h-4 text-cyan-400" />
@@ -231,7 +232,7 @@ export const SandboxTab: React.FC<SandboxTabProps> = ({
               className={`p-3 rounded-lg border cursor-pointer transition-all ${
                 selectedRecipient === recip.account
                   ? 'bg-cyan-950/30 border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.15)]'
-                  : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                  : 'bg-slate-900 border-[#2a2d36] hover:border-slate-700'
               }`}
             >
               <div className="font-mono text-xs font-bold text-white truncate">{recip.account}</div>
@@ -246,7 +247,7 @@ export const SandboxTab: React.FC<SandboxTabProps> = ({
       </div>
 
       {/* Mock Banking Ledger Audit History */}
-      <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-5 shadow-lg">
+      <div className="bg-[#13151c] border border-[#2a2d36] rounded-xl p-5 ">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold font-mono text-slate-200 flex items-center gap-2">
             <History className="w-4 h-4 text-cyan-400" />
@@ -258,7 +259,7 @@ export const SandboxTab: React.FC<SandboxTabProps> = ({
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs font-mono">
             <thead>
-              <tr className="border-b border-slate-800 text-slate-400 uppercase text-[11px]">
+              <tr className="border-b border-[#2a2d36] text-slate-400 uppercase text-[11px]">
                 <th scope="col" className="pb-2.5">Time</th>
                 <th scope="col" className="pb-2.5">Type</th>
                 <th scope="col" className="pb-2.5">Sender</th>
@@ -278,7 +279,10 @@ export const SandboxTab: React.FC<SandboxTabProps> = ({
                     </span>
                   </td>
                   <td className="py-2.5 text-slate-400 truncate max-w-[120px]">{tx.sender}</td>
-                  <td className="py-2.5 text-cyan-300 font-bold">{tx.recipient}</td>
+                  <td className="py-2.5 pr-3">
+                    <span className="font-semibold text-cyan-300">{tx.recipient}</span>
+                    {tx.memo && <span className="block max-w-[15rem] break-words text-[11px] text-slate-400">{tx.memo}</span>}
+                  </td>
                   <td className="py-2.5 font-bold text-white">
                     {tx.type === 'TRANSFER' ? `-$${tx.amount.toFixed(2)}` : `+$${tx.amount.toFixed(2)}`}
                   </td>

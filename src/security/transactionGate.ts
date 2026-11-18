@@ -31,6 +31,7 @@ interface TokenPayload {
   intent: 'TRANSFER';
   iat: number;
   exp: number;
+  consent_key?: string;
 }
 
 /**
@@ -87,10 +88,17 @@ export function signVerdictToken(verdict: FirewallVerdict): string {
     exp: now + 5 * 60 * 1000, // 5-minute validity window
   };
 
-  const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = crypto.createHmac('sha256', key).update(payloadB64).digest('hex');
+  return signToken(payload, key, 'bk_auth');
+}
 
-  return `bk_auth.${payloadB64}.${signature}`;
+function tokenSignature(encodedPayload: string, key: string, kind: 'bk_auth' | 'bk_consent'): string {
+  const signedValue = kind === 'bk_auth' ? encodedPayload : `${kind}.${encodedPayload}`;
+  return crypto.createHmac('sha256', key).update(signedValue).digest('hex');
+}
+
+function signToken(payload: TokenPayload, key: string, kind: 'bk_auth' | 'bk_consent'): string {
+  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  return `${kind}.${encodedPayload}.${tokenSignature(encodedPayload, key, kind)}`;
 }
 
 /**
@@ -101,12 +109,20 @@ export function verifyVerdictToken(
   token: string,
   expected: { request_id: string; recipient: string; amount: number; memo?: string }
 ): { valid: boolean; error?: string; payload?: TokenPayload } {
+  return verifyToken(token, expected, 'bk_auth');
+}
+
+function verifyToken(
+  token: string,
+  expected: { request_id: string; recipient: string; amount: number; memo?: string },
+  kind: 'bk_auth' | 'bk_consent'
+): { valid: boolean; error?: string; payload?: TokenPayload } {
   if (!token || typeof token !== 'string') {
     return { valid: false, error: 'GATE_REJECTION: Missing authorization token.' };
   }
 
   const parts = token.split('.');
-  if (parts.length !== 3 || parts[0] !== 'bk_auth') {
+  if (parts.length !== 3 || parts[0] !== kind) {
     return { valid: false, error: 'GATE_REJECTION: Malformed authorization token structure.' };
   }
 
@@ -120,7 +136,7 @@ export function verifyVerdictToken(
   }
 
   // Recompute expected HMAC signature
-  const expectedSig = crypto.createHmac('sha256', key).update(payloadB64).digest('hex');
+  const expectedSig = tokenSignature(payloadB64, key, kind);
 
   // Constant-time signature comparison to prevent timing attacks
   const receivedBuf = Buffer.from(receivedSig, 'utf-8');
@@ -193,7 +209,7 @@ class MockLedgerStore {
   private processedIdempotencyKeys = new Map<string, MockTransaction>();
 
   // Redeemed token request IDs to prevent token replay
-  private redeemedTokenIds = new Set<string>();
+  private redeemedTokenIds = new Map<string, number>();
 
   public getBalance(): number {
     return this.balance;
@@ -228,7 +244,6 @@ class MockLedgerStore {
       },
     ];
     this.processedIdempotencyKeys.clear();
-    this.redeemedTokenIds.clear();
   }
 
   /**
@@ -237,6 +252,27 @@ class MockLedgerStore {
    */
   public registerApprovedVerdict(verdict: FirewallVerdict): string {
     return signVerdictToken(verdict);
+  }
+
+  public confirmTransfer(payload: ExecuteTransferPayload, consent: unknown):
+    | { success: true; consent_token: string }
+    | { success: false; error: string } {
+    if (consent !== true) {
+      return { success: false, error: 'CONSENT_REQUIRED: Explicit approval is required for a mock transfer.' };
+    }
+
+    const verified = verifyVerdictToken(payload.verdict_token, payload);
+    if (!verified.payload) {
+      return { success: false, error: verified.error ?? 'GATE_REJECTION: Authorization verification failed.' };
+    }
+    const now = Date.now();
+    const grant: TokenPayload = {
+      ...verified.payload,
+      consent_key: payload.idempotency_key,
+      iat: now,
+      exp: Math.min(verified.payload.exp, now + 60_000),
+    };
+    return { success: true, consent_token: signToken(grant, getSigningKey(), 'bk_consent') };
   }
 
   /**
@@ -250,31 +286,23 @@ class MockLedgerStore {
     transaction?: MockTransaction;
     updated_balance: number;
   } {
-    const { request_id, recipient, amount, idempotency_key, verdict_token, memo } = payload;
+    const { request_id, recipient, amount, idempotency_key, verdict_token, consent_token, memo } = payload;
 
-    // 1. Atomic Idempotency Check (Prevent duplicate execution)
-    if (this.processedIdempotencyKeys.has(idempotency_key)) {
-      const existingTx = this.processedIdempotencyKeys.get(idempotency_key)!;
+    const verification = verifyVerdictToken(verdict_token, { request_id, recipient, amount, memo });
+    if (!verification.payload) {
       return {
         success: false,
-        error: `DUPLICATE_REJECTED: Idempotency key "${idempotency_key}" was already executed at ${existingTx.timestamp}.`,
-        transaction: existingTx,
+        error: verification.error || 'GATE_REJECTION: Authorization verification failed.',
         updated_balance: this.balance,
       };
     }
 
-    // 2. Cryptographic Authorization Token Verification (Stateless & tamper-proof)
-    const verification = verifyVerdictToken(verdict_token, {
-      request_id,
-      recipient,
-      amount,
-      memo,
-    });
-
-    if (!verification.valid) {
+    const existingTx = this.processedIdempotencyKeys.get(idempotency_key);
+    if (existingTx) {
       return {
         success: false,
-        error: verification.error || 'GATE_REJECTION: Authorization verification failed.',
+        error: 'DUPLICATE_REJECTED: This idempotency key was already used.',
+        transaction: existingTx.request_id === request_id ? existingTx : undefined,
         updated_balance: this.balance,
       };
     }
@@ -284,6 +312,15 @@ class MockLedgerStore {
       return {
         success: false,
         error: `REPLAY_REJECTED: Authorization token for request ID "${request_id}" has already been redeemed. Single-use token expired.`,
+        updated_balance: this.balance,
+      };
+    }
+
+    const consent = consent_token && verifyToken(consent_token, payload, 'bk_consent');
+    if (!consent || !consent.payload || consent.payload.consent_key !== idempotency_key) {
+      return {
+        success: false,
+        error: 'CONSENT_REQUIRED: A valid confirmation for these exact transfer details is required.',
         updated_balance: this.balance,
       };
     }
@@ -339,7 +376,11 @@ class MockLedgerStore {
 
     this.transactions.unshift(newTx);
     this.processedIdempotencyKeys.set(idempotency_key, newTx);
-    this.redeemedTokenIds.add(request_id);
+    const now = Date.now();
+    for (const [id, expiry] of this.redeemedTokenIds) {
+      if (expiry < now) this.redeemedTokenIds.delete(id);
+    }
+    this.redeemedTokenIds.set(request_id, verification.payload.exp);
 
     return {
       success: true,
