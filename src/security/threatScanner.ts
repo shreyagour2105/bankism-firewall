@@ -4,8 +4,8 @@
  * and pattern analysis for AI prompts, memos, and parameters.
  */
 
-import { ThreatCategory, RiskLevel, BankingIntent, ExtractedParameters } from '../types/firewall';
-import { normaliseInput, NormalizationResult } from './normalizer';
+import type { ThreatCategory, RiskLevel, BankingIntent, ExtractedParameters } from '../types/firewall.js';
+import { normaliseInput, type NormalizationResult } from './normalizer.js';
 
 export interface ThreatScanResult {
   threats: ThreatCategory[];

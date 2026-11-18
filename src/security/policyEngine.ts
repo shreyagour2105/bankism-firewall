@@ -4,7 +4,7 @@
  * The AI model is strictly an advisory analyzer; this engine is the SOLE authority.
  */
 
-import {
+import type {
   FirewallVerdict,
   Verdict,
   RiskLevel,
@@ -15,9 +15,9 @@ import {
   BankingIntent,
   BankingToolName,
   ExtractedParameters,
-} from '../types/firewall';
-import { normaliseInput } from './normalizer';
-import { extractIntentAndParams, scanForThreats, DEMO_RECIPIENTS } from './threatScanner';
+} from '../types/firewall.js';
+import { normaliseInput } from './normalizer.js';
+import { extractIntentAndParams, scanForThreats, DEMO_RECIPIENTS } from './threatScanner.js';
 
 export const CONFIG = {
   MAX_SINGLE_TRANSFER_USD: 1000.0,
@@ -59,7 +59,7 @@ function parseToolCall(call: unknown): { name: BankingToolName; parameters: Extr
     return undefined;
   }
 
-  return { name, parameters: { recipient: recipient.trim(), amount, memo: memo?.trim() } };
+  return { name, parameters: { recipient: recipient.trim(), amount, memo: typeof memo === 'string' ? memo.trim() : undefined } };
 }
 
 /**

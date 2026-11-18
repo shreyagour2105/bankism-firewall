@@ -7,9 +7,9 @@
  */
 
 import crypto from 'node:crypto';
-import { MockTransaction, ExecuteTransferPayload, FirewallVerdict } from '../types/firewall';
-import { CONFIG } from './policyEngine';
-import { DEMO_RECIPIENTS } from './threatScanner';
+import type { MockTransaction, ExecuteTransferPayload, FirewallVerdict } from '../types/firewall.js';
+import { CONFIG } from './policyEngine.js';
+import { DEMO_RECIPIENTS } from './threatScanner.js';
 
 export interface LedgerState {
   current_balance: number;
